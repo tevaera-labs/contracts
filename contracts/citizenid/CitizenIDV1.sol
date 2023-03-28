@@ -33,6 +33,9 @@ contract CitizenIDV1 is
 
     CountersUpgradeable.Counter private tokenIdCounter;
 
+    /// @dev the rep admin address
+    address private repAdminAddress;
+
     /// @dev the safe address
     address payable private safeAddress;
 
@@ -46,8 +49,14 @@ contract CitizenIDV1 is
     string private tokenImageUri;
 
     /// @dev check if the caller is the claim contract
-    modifier isClaim() {
+    modifier onlyClaim() {
         require(msg.sender == claimContract, "not accessible");
+        _;
+    }
+
+    /// @dev check if the caller is the rep admin
+    modifier onlyRepAdmin() {
+        require(msg.sender == repAdminAddress, "not accessible");
         _;
     }
 
@@ -114,7 +123,7 @@ contract CitizenIDV1 is
     }
 
     /// @dev Mints the Citizen ID
-    function claim(address tevan) external payable isClaim whenNotPaused {
+    function claim(address tevan) external payable onlyClaim whenNotPaused {
         mintToken(tevan);
     }
 
@@ -216,7 +225,7 @@ contract CitizenIDV1 is
     function updateRep(
         uint256[] memory _tokenIds,
         uint256[] memory _reps
-    ) external onlyOwner {
+    ) external onlyRepAdmin {
         for (uint256 i = 0; i < _tokenIds.length; i++) {
             uint256 tokenId = _tokenIds[i];
             uint256 rep = _reps[i];
@@ -228,6 +237,15 @@ contract CitizenIDV1 is
 
             emit RepScoreUpdated(tokenId, rep);
         }
+    }
+
+    /// @dev Allows owner to update the rep admin wallet address
+    /// @param _repAdminAddress the rep admin wallet address
+    function updateRepAdminAddress(
+        address _repAdminAddress
+    ) external onlyOwner {
+        require(_repAdminAddress != address(0), "Invalid address!");
+        repAdminAddress = _repAdminAddress;
     }
 
     /// @dev Allows owner to update the safe wallet address
