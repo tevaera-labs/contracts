@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.18;
+pragma solidity 0.8.18;
 
 import "../citizenid/CitizenIDV1.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -38,13 +38,11 @@ contract MagicalPhoenixV1 is
     uint16 public charityBps = 500; // default to 5%
 
     uint256 public constant MAX_PHOENIXES = 10000;
-    uint256 public constant PHOENIX_PRICE = 25000000000000000; //0.025 ETH
+    uint256 public constant PHOENIX_PRICE = 15000000000000000; //0.015 ETH
 
     address payable private safeAddress;
 
-    uint16 private index;
-    uint16[10000] private ids;
-
+    mapping(address => bool) private addressToHasMintedMap;
     mapping(uint256 => uint256) private availableTokens;
     uint256 private randomNonce = 0;
     uint256 private numAvailableTokens;
@@ -58,8 +56,8 @@ contract MagicalPhoenixV1 is
         address payable _safeAddress,
         address payable _charityAddress,
         CitizenIDV1 _citizenIdContract,
-        string memory _tokenBaseUri
-    ) external initializer nonReentrant {
+        string calldata _tokenBaseUri
+    ) external initializer {
         __ERC721_init("MagicalPhoenix", "PHOENIX");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
@@ -85,7 +83,7 @@ contract MagicalPhoenixV1 is
                             block.number,
                             block.timestamp,
                             block.prevrandao,
-                            blockhash(block.number),
+                            blockhash(block.number - 1),
                             address(this)
                         )
                     )
@@ -106,7 +104,7 @@ contract MagicalPhoenixV1 is
         nonReentrant
     {
         // make sure caller has not already minted
-        require(balanceOf(msg.sender) == 0, "already minted");
+        require(addressToHasMintedMap[msg.sender] == false, "already minted");
 
         // make sure phoenixes are not sold out
         require(totalSupply() + 1 <= MAX_PHOENIXES, "sold out");
@@ -120,6 +118,9 @@ contract MagicalPhoenixV1 is
         // mint the guardian nft
         _mint(msg.sender, tokenId);
 
+        // mark address as minted
+        addressToHasMintedMap[msg.sender] = true;
+
         // increase the nonce
         randomNonce++;
 
@@ -130,12 +131,31 @@ contract MagicalPhoenixV1 is
     /// @dev Allows owner to withdraw funds. Specified percentage goes to charity by default
     function withdrawFunds() external onlyOwner {
         uint256 availableBalance = address(this).balance;
+        uint256 charityAmount = 0;
 
-        uint256 charityAmount = (availableBalance / 10000) * charityBps;
-        require(charityAddress.send(charityAmount));
+        if (charityBps > 0) {
+            // make sure charity address is configured
+            require(charityAddress != address(0), "Missing charity address!");
+
+            // calculate the charity amount
+            charityAmount = (availableBalance / 10000) * charityBps;
+
+            // transfer charity funds to charity address
+            (bool charityTxSuccess, ) = payable(charityAddress).call{
+                value: (charityAmount)
+            }("");
+            // make sure the transaction was successful
+            require(charityTxSuccess, "Transfer to charity address failed.");
+        }
+
+        // make sure safe address is configured
+        require(safeAddress != address(0), "Missing safe address!");
 
         uint256 amountAfterCharity = availableBalance - charityAmount;
-        require(safeAddress.send(amountAfterCharity));
+        (bool safeTxSuccess, ) = payable(safeAddress).call{
+            value: (amountAfterCharity)
+        }("");
+        require(safeTxSuccess, "Transfer to safe address failed.");
     }
 
     /// @dev Allows owner to update charity address and charity share in basis points
@@ -155,13 +175,14 @@ contract MagicalPhoenixV1 is
     function updateSafeAddress(
         address payable _safeAddress
     ) external onlyOwner whenNotPaused {
+        require(_safeAddress != address(0), "Invalid address!");
         safeAddress = _safeAddress;
     }
 
     /// @dev Sets the token base uri
     /// @param _tokenBaseUri the token base uri
     function setTokenBaseUri(
-        string memory _tokenBaseUri
+        string calldata _tokenBaseUri
     ) external onlyOwner whenNotPaused {
         tokenBaseUri = _tokenBaseUri;
     }
@@ -193,13 +214,13 @@ contract MagicalPhoenixV1 is
                             block.number,
                             block.timestamp,
                             block.prevrandao,
-                            blockhash(block.number),
+                            blockhash(block.number - 1),
                             address(this)
                         )
                     )
                 )
             )
-        ) % MAX_PHOENIXES;
+        ) % numAvailableTokens;
 
         return getAvailableTokenAtIndex(randomNum);
     }

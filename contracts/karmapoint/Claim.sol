@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.18;
+pragma solidity 0.8.18;
 
 import "../citizenid/CitizenIDV1.sol";
 import "./KarmaPointV1.sol";
@@ -32,11 +32,25 @@ contract Claim is Ownable, Pausable {
     function claim() external payable isNotBlacklisted whenNotPaused {
         if (citizenIdContract.balanceOf(msg.sender) == 0) {
             citizenIdContract.claim{value: msg.value}(msg.sender);
+        } else {
+            require(msg.value == 0, "unexpected ether sent");
         }
 
         if (kpContract.toBeClaimedKP(msg.sender) > 0) {
             kpContract.claim(msg.sender);
         }
+    }
+
+    /// @dev Owner can update the citizen id contract address
+    function setCitizenIdContract(
+        CitizenIDV1 _newCitizenIdContract
+    ) external onlyOwner {
+        citizenIdContract = _newCitizenIdContract;
+    }
+
+    /// @dev Owner can update the KP contract address
+    function setKpContract(KarmaPointV1 _newKpContract) external onlyOwner {
+        kpContract = _newKpContract;
     }
 
     /// @dev Owner can pasue the claim

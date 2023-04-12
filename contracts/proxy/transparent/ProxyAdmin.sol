@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts v4.4.1 (proxy/transparent/ProxyAdmin.sol)
 
-pragma solidity ^0.8.0;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./TransparentUpgradeableProxy.sol";

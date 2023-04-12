@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.18;
+pragma solidity 0.8.18;
 
 import "../citizenid/CitizenIDV1.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -45,13 +45,15 @@ contract ReformistSphinxV1 is
 
     string public tokenImageUri;
 
+    mapping(address => bool) private addressToHasMintedMap;
+
     /// @dev Initializes the upgradable contract
     /// @param _citizenIdContract the citizen id contract address
     /// @param _tokenImageUri the token image uri
     function initialize(
         CitizenIDV1 _citizenIdContract,
-        string memory _tokenImageUri
-    ) external initializer nonReentrant {
+        string calldata _tokenImageUri
+    ) external initializer {
         __ERC721_init("ReformistSphinx", "SPHINX");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
@@ -78,7 +80,7 @@ contract ReformistSphinxV1 is
         nonReentrant
     {
         // make sure caller has not already minted
-        require(balanceOf(msg.sender) == 0, "already minted");
+        require(addressToHasMintedMap[msg.sender] == false, "already minted");
 
         // get the token id & update the counter
         uint256 tokenId = tokenIdCounter.current();
@@ -87,6 +89,9 @@ contract ReformistSphinxV1 is
         // mint the guardian nft
         _mint(msg.sender, tokenId);
 
+        // mark address as minted
+        addressToHasMintedMap[msg.sender] = true;
+
         // set the token uri
         _setTokenURI(tokenId, getTokenURI(tokenId));
     }
@@ -94,7 +99,7 @@ contract ReformistSphinxV1 is
     /// @dev Sets the token base uri
     /// @param _tokenImageUri the token base uri
     function setTokenImageUri(
-        string memory _tokenImageUri
+        string calldata _tokenImageUri
     ) external onlyOwner whenNotPaused {
         tokenImageUri = _tokenImageUri;
     }
@@ -150,7 +155,7 @@ contract ReformistSphinxV1 is
             '"image": "',
             tokenImageUri,
             '",',
-            '"attributes": [{"trait_type":"Guardian", "value": "Yes"}, {"trait_type":"Skin", "value": "Golden"}]',
+            '"attributes": [{"trait_type":"Guardian", "value": "Sphinx"}, {"trait_type":"Skin", "value": "Brown"}]',
             "}"
         );
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.18;
+pragma solidity 0.8.18;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -66,9 +66,9 @@ contract CitizenIDV1 is
     /// @param _tokenImageUri the token base uri
     /// @param _tokenPrice the token base price
     function initialize(
-        string memory _tokenImageUri,
+        string calldata _tokenImageUri,
         uint256 _tokenPrice
-    ) external initializer nonReentrant {
+    ) external initializer {
         __ERC721_init("CitizenID", "TEVAN");
         __ERC721Enumerable_init();
         __Ownable_init();
@@ -84,10 +84,19 @@ contract CitizenIDV1 is
 
     /// @dev Allows owner to blacklist any wallet address across Tevaera platform
     /// @param addresses the list of wallet addresses that need to be blocked
-    function blacklistAddresses(address[] memory addresses) external onlyOwner {
-        for (uint256 i = 0; i < addresses.length; i++) {
+    function blacklistAddresses(
+        address[] calldata addresses
+    ) external onlyOwner {
+        uint256 len = addresses.length;
+        for (uint256 i = 0; i < len; ) {
+            require(addresses[i] != address(0), "Invalid address");
+
             if (!blacklisted[addresses[i]]) {
                 blacklisted[addresses[i]] = true;
+            }
+
+            unchecked {
+                ++i;
             }
         }
     }
@@ -95,17 +104,23 @@ contract CitizenIDV1 is
     /// @dev Allows owner to remove any wallet address from the blacklist
     /// @param addresses the list of wallet addresses that need to be unblocked
     function removeFromBlacklist(
-        address[] memory addresses
+        address[] calldata addresses
     ) external onlyOwner {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        uint256 len = addresses.length;
+
+        for (uint256 i = 0; i < len; ) {
             if (blacklisted[addresses[i]]) {
                 blacklisted[addresses[i]] = false;
+            }
+
+            unchecked {
+                ++i;
             }
         }
     }
 
     /// @dev Mints the Citizen ID
-    function mintToken(address tevan) internal whenNotPaused nonReentrant {
+    function mintToken(address tevan) internal nonReentrant {
         // make sure caller has not already minted the citizen id
         require(balanceOf(tevan) == 0, "Already a Tevan!");
         // make sure caller not blacklisted
@@ -124,6 +139,8 @@ contract CitizenIDV1 is
 
     /// @dev Mints the Citizen ID
     function claim(address tevan) external payable onlyClaim whenNotPaused {
+        require(canClaim == true, "Claim not enabled.");
+
         mintToken(tevan);
     }
 
@@ -195,7 +212,7 @@ contract CitizenIDV1 is
     /// @dev Sets the token base uri
     /// @param _tokenImageUri the token base uri
     function setTokenImageUri(
-        string memory _tokenImageUri
+        string calldata _tokenImageUri
     ) external onlyOwner whenNotPaused {
         tokenImageUri = _tokenImageUri;
     }
@@ -215,6 +232,8 @@ contract CitizenIDV1 is
         address _claimContract,
         bool _canClaim
     ) external onlyOwner {
+        require(_claimContract != address(0), "Invalid address!");
+
         claimContract = _claimContract;
         canClaim = _canClaim;
     }
@@ -223,12 +242,18 @@ contract CitizenIDV1 is
     /// @param _tokenIds a list of citizen/token ids
     /// @param _reps a list of rep scores
     function updateRep(
-        uint256[] memory _tokenIds,
-        uint256[] memory _reps
+        uint256[] calldata _tokenIds,
+        uint256[] calldata _reps
     ) external onlyRepAdmin {
-        for (uint256 i = 0; i < _tokenIds.length; i++) {
+        uint256 len = _tokenIds.length;
+        require(len == _reps.length, "Different arrays lengths");
+
+        for (uint256 i = 0; i < len; ) {
             uint256 tokenId = _tokenIds[i];
             uint256 rep = _reps[i];
+
+            // make sure token passed is valid
+            require(tokenId != 0, "Invalid token id");
 
             // update token uri (metadata)
             _setTokenURI(tokenId, getTokenURI(tokenId, rep));
@@ -236,6 +261,10 @@ contract CitizenIDV1 is
             tevanRep[ownerOf(tokenId)] = rep;
 
             emit RepScoreUpdated(tokenId, rep);
+
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -260,7 +289,10 @@ contract CitizenIDV1 is
     /// @dev Withdraws funds from this contract to safe address
     function withdrawFunds() external onlyOwner {
         require(safeAddress != address(0), "Missing safe address!");
-        require(safeAddress.send(address(this).balance));
+        (bool success, ) = payable(safeAddress).call{
+            value: (address(this).balance)
+        }("");
+        require(success, "Transfer failed.");
     }
 
     function _burn(

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.18;
+pragma solidity 0.8.18;
 
 import "../citizenid/CitizenIDV1.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -80,7 +80,7 @@ contract KarmaPointV1 is
         uint256 _price,
         uint256 _totalSupplyCap,
         uint256 _buyCap
-    ) external initializer nonReentrant {
+    ) external initializer {
         __ERC20_init("KarmaPoint", "KP");
         __ERC20Capped_init(_totalSupplyCap);
         __Ownable_init();
@@ -130,7 +130,13 @@ contract KarmaPointV1 is
 
     /// @dev Withdraws funds from this contract to safe address
     function withdrawFunds() external onlyOwner {
-        require(safeAddress.send(address(this).balance));
+        // make sure safe address is configured
+        require(safeAddress != address(0), "Missing safe address!");
+
+        (bool safeTxSuccess, ) = payable(safeAddress).call{
+            value: (address(this).balance)
+        }("");
+        require(safeTxSuccess, "Transfer to safe address failed.");
     }
 
     /// @dev Allows owner to update transfer capability
@@ -164,12 +170,21 @@ contract KarmaPointV1 is
     /// @dev Allows owner to airdrop karma points based on the off-chain data
     /// @param tevans a list of user with the points to airdrop
     function sync(
-        address[] memory tevans,
-        uint256[] memory amounts
+        address[] calldata tevans,
+        uint256[] calldata amounts
     ) external onlyOwner {
-        require(tevans.length == amounts.length, "Different arrays lengths");
-        for (uint256 i = 0; i < tevans.length; i++) {
-            toBeClaimedKP[tevans[i]] = amounts[i];
+        uint256 len = tevans.length;
+        require(len == amounts.length, "Different arrays lengths");
+
+        for (uint256 i = 0; i < len; ) {
+            require(tevans[i] != address(0), "Zero Address");
+            require(amounts[i] > 0, "KP <= 0");
+
+            toBeClaimedKP[tevans[i]] += amounts[i];
+
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -177,9 +192,7 @@ contract KarmaPointV1 is
     /// @param kpAmount the number of karma points
     /// @return uint256 the amount of stable coins required
     function getPrice(uint256 kpAmount) public view returns (uint256) {
-        unchecked {
-            return (price * kpAmount);
-        }
+        return (price * kpAmount);
     }
 
     /// @dev Allows owner to update the price for karma points
@@ -222,13 +235,13 @@ contract KarmaPointV1 is
         uint256 amount
     ) internal virtual override {
         require(
-            canTransfer || from == address(0) || to == address(0),
+            canTransfer && from != address(0) && to != address(0),
             "Unauthorized"
         );
         // sender and receiver should not be blacklisted
         require(!citizenIdContract.blacklisted(from), "Sender Blacklisted!");
         require(!citizenIdContract.blacklisted(to), "Receiver Blacklisted!");
-        // sender should have citizenship
+        // receiver should have citizenship
         require(
             citizenIdContract.balanceOf(to) > 0,
             "Receiver is not a Tevan!"
