@@ -169,12 +169,12 @@ contract CitizenIDV1 is
     /// @dev Gets the tier based on the REP score
     /// @param rep the rep score
     function getTier(uint256 rep) internal pure returns (string memory) {
-        if (rep > 100000) return "GUARDIAN";
-        if (rep > 50000 && rep <= 100000) return "OG";
-        if (rep > 20000 && rep <= 50000) return "DIAMOND";
-        if (rep > 10000 && rep <= 20000) return "PLATINUM";
-        if (rep > 5000 && rep <= 10000) return "GOLD";
-        if (rep > 2000 && rep <= 5000) return "SILVER";
+        if (rep > 500000) return "GUARDIAN";
+        if (rep > 200000 && rep <= 500000) return "OG";
+        if (rep > 100000 && rep <= 200000) return "DIAMOND";
+        if (rep > 50000 && rep <= 100000) return "PLATINUM";
+        if (rep > 20000 && rep <= 50000) return "GOLD";
+        if (rep > 5000 && rep <= 20000) return "SILVER";
         return "BRONZE";
     }
 
