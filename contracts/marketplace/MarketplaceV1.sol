@@ -13,7 +13,8 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721ReceiverUpgradea
 import "@openzeppelin/contracts-upgradeable/utils/introspection/IERC165Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
 
-import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 
@@ -25,14 +26,16 @@ import "../../lib/external/ERC2771ContextUpgradeable.sol";
 
 import "../../lib/CurrencyTransferLib.sol";
 import "../../lib/FeeType.sol";
+import "../citizenid/CitizenIDV2.sol";
 
 contract MarketplaceV1 is
     Initializable,
     IMarketplace,
+    PausableUpgradeable,
     ReentrancyGuardUpgradeable,
     ERC2771ContextUpgradeable,
     MulticallUpgradeable,
-    AccessControlEnumerableUpgradeable,
+    OwnableUpgradeable,
     IERC721ReceiverUpgradeable,
     IERC1155ReceiverUpgradeable
 {
@@ -42,11 +45,6 @@ contract MarketplaceV1 is
 
     bytes32 private constant MODULE_TYPE = bytes32("Marketplace");
     uint256 private constant VERSION = 2;
-
-    /// @dev Only lister role holders can create listings, when listings are restricted by lister address.
-    bytes32 private constant LISTER_ROLE = keccak256("LISTER_ROLE");
-    /// @dev Only assets from NFT contracts with asset role can be listed, when listings are restricted by asset address.
-    bytes32 private constant ASSET_ROLE = keccak256("ASSET_ROLE");
 
     /// @dev The address of the native token wrapper contract.
     address private immutable nativeTokenWrapper;
@@ -63,8 +61,14 @@ contract MarketplaceV1 is
     /// @dev The max bps of the contract. So, 10_000 == 100 %
     uint64 public constant MAX_BPS = 10_000;
 
-    /// @dev The % of primary sales collected as platform fees.
-    uint64 private platformFeeBps;
+    /// @dev The % of primary sales collected as platform fees for tevans at discounted rate.
+    uint64 private tevanPlatformFeeBps;
+
+    /// @dev The % of primary sales collected as platform fees for non-tevans.
+    uint64 private nonTevanPlatformFeeBps;
+
+    /// @dev The CitizenID contract instance
+    CitizenIDV2 private citizenIdContract;
 
     /// @dev
     /**
@@ -115,14 +119,17 @@ contract MarketplaceV1 is
 
     /// @dev Initiliazes the contract, like a constructor.
     function initialize(
-        address _defaultAdmin,
         string memory _contractURI,
         address[] memory _trustedForwarders,
         address _platformFeeRecipient,
-        uint256 _platformFeeBps
+        uint256 _tevanPlatformFeeBps,
+        uint256 _nonTevanPlatformFeeBps,
+        CitizenIDV2 _citizenIdContract
     ) external initializer {
         // Initialize inherited contracts, most base-like -> most derived.
+        __Pausable_init();
         __ReentrancyGuard_init();
+        __Ownable_init();
         __ERC2771Context_init(_trustedForwarders);
 
         // Initialize this contract's state.
@@ -130,12 +137,11 @@ contract MarketplaceV1 is
         bidBufferBps = 500;
 
         contractURI = _contractURI;
-        platformFeeBps = uint64(_platformFeeBps);
         platformFeeRecipient = _platformFeeRecipient;
+        tevanPlatformFeeBps = uint64(_tevanPlatformFeeBps);
+        nonTevanPlatformFeeBps = uint64(_nonTevanPlatformFeeBps);
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _defaultAdmin);
-        _setupRole(LISTER_ROLE, address(0));
-        _setupRole(ASSET_ROLE, address(0));
+        citizenIdContract = _citizenIdContract;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -190,17 +196,10 @@ contract MarketplaceV1 is
 
     function supportsInterface(
         bytes4 interfaceId
-    )
-        public
-        view
-        virtual
-        override(AccessControlEnumerableUpgradeable, IERC165Upgradeable)
-        returns (bool)
-    {
+    ) public view virtual override(IERC165Upgradeable) returns (bool) {
         return
             interfaceId == type(IERC1155ReceiverUpgradeable).interfaceId ||
-            interfaceId == type(IERC721ReceiverUpgradeable).interfaceId ||
-            super.supportsInterface(interfaceId);
+            interfaceId == type(IERC721ReceiverUpgradeable).interfaceId;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -221,16 +220,6 @@ contract MarketplaceV1 is
         );
 
         require(tokenAmountToList > 0, "QUANTITY");
-        require(
-            hasRole(LISTER_ROLE, address(0)) ||
-                hasRole(LISTER_ROLE, _msgSender()),
-            "!LISTER"
-        );
-        require(
-            hasRole(ASSET_ROLE, address(0)) ||
-                hasRole(ASSET_ROLE, _params.assetContract),
-            "!ASSET"
-        );
 
         uint256 startTime = _params.startTime;
         if (startTime < block.timestamp) {
@@ -844,6 +833,9 @@ contract MarketplaceV1 is
         uint256 _totalPayoutAmount,
         Listing memory _listing
     ) internal {
+        uint256 platformFeeBps = citizenIdContract.balanceOf(msg.sender) > 0
+            ? tevanPlatformFeeBps
+            : nonTevanPlatformFeeBps;
         uint256 platformFeeCut = (_totalPayoutAmount * platformFeeBps) /
             MAX_BPS;
 
@@ -1033,8 +1025,16 @@ contract MarketplaceV1 is
     }
 
     /// @dev Returns the platform fee recipient and bps.
-    function getPlatformFeeInfo() external view returns (address, uint16) {
-        return (platformFeeRecipient, uint16(platformFeeBps));
+    function getPlatformFeeInfo()
+        external
+        view
+        returns (address, uint16, uint16)
+    {
+        return (
+            platformFeeRecipient,
+            uint16(tevanPlatformFeeBps),
+            uint16(nonTevanPlatformFeeBps)
+        );
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -1044,21 +1044,28 @@ contract MarketplaceV1 is
     /// @dev Lets a contract admin update platform fee recipient and bps.
     function setPlatformFeeInfo(
         address _platformFeeRecipient,
-        uint256 _platformFeeBps
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_platformFeeBps <= MAX_BPS, "bps <= 10000.");
+        uint256 _tevanPlatformFeeBps,
+        uint256 _nonTevanPlatformFeeBps
+    ) external onlyOwner {
+        require(_tevanPlatformFeeBps <= MAX_BPS, "bps <= 10000.");
+        require(_nonTevanPlatformFeeBps <= MAX_BPS, "bps <= 10000.");
 
-        platformFeeBps = uint64(_platformFeeBps);
         platformFeeRecipient = _platformFeeRecipient;
+        tevanPlatformFeeBps = uint64(_tevanPlatformFeeBps);
+        nonTevanPlatformFeeBps = uint64(_nonTevanPlatformFeeBps);
 
-        emit PlatformFeeInfoUpdated(_platformFeeRecipient, _platformFeeBps);
+        emit PlatformFeeInfoUpdated(
+            _platformFeeRecipient,
+            _tevanPlatformFeeBps,
+            _nonTevanPlatformFeeBps
+        );
     }
 
     /// @dev Lets a contract admin set auction buffers.
     function setAuctionBuffers(
         uint256 _timeBuffer,
         uint256 _bidBufferBps
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external onlyOwner {
         require(_bidBufferBps < MAX_BPS, "invalid BPS.");
 
         timeBuffer = uint64(_timeBuffer);
@@ -1068,9 +1075,7 @@ contract MarketplaceV1 is
     }
 
     /// @dev Lets a contract admin set the URI for the contract-level metadata.
-    function setContractURI(
-        string calldata _uri
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setContractURI(string calldata _uri) external onlyOwner {
         contractURI = _uri;
     }
 
