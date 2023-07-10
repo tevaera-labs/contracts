@@ -43,9 +43,6 @@ contract MarketplaceV1 is
                             State variables
     //////////////////////////////////////////////////////////////*/
 
-    bytes32 private constant MODULE_TYPE = bytes32("Marketplace");
-    uint256 private constant VERSION = 2;
-
     /// @dev The address of the native token wrapper contract.
     address private immutable nativeTokenWrapper;
 
@@ -60,6 +57,9 @@ contract MarketplaceV1 is
 
     /// @dev The max bps of the contract. So, 10_000 == 100 %
     uint64 public constant MAX_BPS = 10_000;
+
+    /// @dev The max platform fee bps that owner can set up to. 250 == 2.5 %
+    uint64 public constant PLATFORM_FEE_MAX_BPS = 250;
 
     /// @dev The % of primary sales collected as platform fees for tevans at discounted rate.
     uint64 private tevanPlatformFeeBps;
@@ -87,8 +87,14 @@ contract MarketplaceV1 is
     /// @dev Mapping from uid of listing => listing info.
     mapping(uint256 => Listing) public listings;
 
+    /// @dev Mapping from asset contract of listed nft => token id => whether it's listed.
+    mapping(address => mapping(uint256 => bool)) public isListed;
+
     /// @dev Mapping from uid of a direct listing => offeror address => offer made to the direct listing by the respective offeror.
     mapping(uint256 => mapping(address => Offer)) public offers;
+
+    /// @dev Mapping from asset contract of nft => token id => offer made by the respective offeror.
+    mapping(address => mapping(uint256 => Offer)) public unlistedNftOffers;
 
     /// @dev Mapping from uid of an auction listing => current winning bid in an auction.
     mapping(uint256 => Offer) public winningBid;
@@ -122,8 +128,6 @@ contract MarketplaceV1 is
         string memory _contractURI,
         address[] memory _trustedForwarders,
         address _platformFeeRecipient,
-        uint256 _tevanPlatformFeeBps,
-        uint256 _nonTevanPlatformFeeBps,
         CitizenIDV2 _citizenIdContract
     ) external initializer {
         // Initialize inherited contracts, most base-like -> most derived.
@@ -135,11 +139,11 @@ contract MarketplaceV1 is
         // Initialize this contract's state.
         timeBuffer = 15 minutes;
         bidBufferBps = 500;
+        tevanPlatformFeeBps = 0; // 0 %
+        nonTevanPlatformFeeBps = 50; // 0.5 %
 
         contractURI = _contractURI;
         platformFeeRecipient = _platformFeeRecipient;
-        tevanPlatformFeeBps = uint64(_tevanPlatformFeeBps);
-        nonTevanPlatformFeeBps = uint64(_nonTevanPlatformFeeBps);
 
         citizenIdContract = _citizenIdContract;
     }
@@ -150,16 +154,6 @@ contract MarketplaceV1 is
 
     /// @dev Lets the contract receives native tokens from `nativeTokenWrapper` withdraw.
     receive() external payable {}
-
-    /// @dev Returns the type of the contract.
-    function contractType() external pure returns (bytes32) {
-        return MODULE_TYPE;
-    }
-
-    /// @dev Returns the version of the contract.
-    function contractVersion() external pure returns (uint8) {
-        return uint8(VERSION);
-    }
 
     /*///////////////////////////////////////////////////////////////
                         ERC 165 / 721 / 1155 logic
@@ -208,9 +202,13 @@ contract MarketplaceV1 is
 
     /// @dev Lets a token owner list tokens for sale: Direct Listing or Auction.
     function createListing(ListingParameters memory _params) external override {
+        require(
+            isListed[_params.assetContract][_params.tokenId] == false,
+            "EXISTING"
+        );
         // Get values to populate `Listing`.
-        uint256 listingId = totalListings;
         totalListings += 1;
+        uint256 listingId = totalListings;
 
         address tokenOwner = _msgSender();
         TokenType tokenTypeOfListing = getTokenType(_params.assetContract);
@@ -252,6 +250,10 @@ contract MarketplaceV1 is
         });
 
         listings[listingId] = newListing;
+        isListed[newListing.assetContract][newListing.tokenId] = true;
+
+        // remove any offers made prior to listing.
+        delete unlistedNftOffers[_params.assetContract][_params.tokenId];
 
         // Tokens listed for sale in an auction are escrowed in Marketplace.
         if (newListing.listingType == ListingType.Auction) {
@@ -265,7 +267,9 @@ contract MarketplaceV1 is
                 tokenOwner,
                 address(this),
                 tokenAmountToList,
-                newListing
+                newListing.assetContract,
+                newListing.tokenId,
+                newListing.tokenType
             );
         }
 
@@ -302,7 +306,7 @@ contract MarketplaceV1 is
             require(_buyoutPricePerToken >= _reservePricePerToken, "RESERVE");
         }
 
-        if (_startTime < block.timestamp) {
+        if (_startTime > 0 && _startTime < block.timestamp) {
             // do not allow listing to start in the past (1 hour buffer)
             require(block.timestamp - _startTime < 1 hours, "ST");
             _startTime = block.timestamp;
@@ -337,7 +341,9 @@ contract MarketplaceV1 is
                     address(this),
                     targetListing.tokenOwner,
                     targetListing.quantity,
-                    targetListing
+                    targetListing.assetContract,
+                    targetListing.tokenId,
+                    targetListing.tokenType
                 );
             }
 
@@ -355,7 +361,9 @@ contract MarketplaceV1 is
                     targetListing.tokenOwner,
                     address(this),
                     safeNewQuantity,
-                    targetListing
+                    targetListing.assetContract,
+                    targetListing.tokenId,
+                    targetListing.tokenType
                 );
             }
         }
@@ -372,6 +380,7 @@ contract MarketplaceV1 is
         require(targetListing.listingType == ListingType.Direct, "!DIRECT");
 
         delete listings[_listingId];
+        delete isListed[targetListing.assetContract][targetListing.tokenId];
 
         emit ListingRemoved(_listingId, targetListing.tokenOwner);
     }
@@ -382,31 +391,53 @@ contract MarketplaceV1 is
 
     /// @dev Lets an account buy a given quantity of tokens from a listing.
     function buy(
-        uint256 _listingId,
+        uint256[] calldata _listingIds,
+        uint256[] calldata _quantitiesToBuy,
         address _buyFor,
-        uint256 _quantityToBuy,
         address _currency,
         uint256 _totalPrice
-    ) external payable override nonReentrant onlyExistingListing(_listingId) {
-        Listing memory targetListing = listings[_listingId];
-        address payer = _msgSender();
-
-        // Check whether the settled total price and currency to use are correct.
+    ) external payable override nonReentrant {
         require(
-            _currency == targetListing.currency &&
-                _totalPrice ==
-                (targetListing.buyoutPricePerToken * _quantityToBuy),
-            "!PRICE"
+            _listingIds.length == _quantitiesToBuy.length,
+            "Different arrays lengths"
         );
 
-        executeSale(
-            targetListing,
-            payer,
-            _buyFor,
-            targetListing.currency,
-            targetListing.buyoutPricePerToken * _quantityToBuy,
-            _quantityToBuy
-        );
+        uint256 remainingAmount = _totalPrice;
+
+        for (uint256 i = 0; i < _listingIds.length; ) {
+            uint256 _listingId = _listingIds[i];
+            Listing storage targetListing = listings[_listingId];
+
+            require(targetListing.assetContract != address(0), "DNE");
+
+            uint256 _quantityToBuy = _quantitiesToBuy[i];
+
+            // Check whether the settled total price and currency to use are correct.
+            require(
+                _currency == targetListing.currency &&
+                    remainingAmount >=
+                    (targetListing.buyoutPricePerToken * _quantityToBuy),
+                "!PRICE"
+            );
+
+            executeSale(
+                targetListing,
+                _msgSender(),
+                _buyFor,
+                targetListing.currency,
+                targetListing.buyoutPricePerToken * _quantityToBuy,
+                _quantityToBuy
+            );
+
+            // Reduce the amount spent from the total amount
+            remainingAmount -=
+                targetListing.buyoutPricePerToken *
+                _quantityToBuy;
+
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     /// @dev Lets a listing's creator accept an offer for their direct listing.
@@ -444,6 +475,62 @@ contract MarketplaceV1 is
         );
     }
 
+    /// @dev Lets a listing's creator accept an offer for their nft.
+    function acceptUnlistedNftOffer(
+        address _assetContract,
+        uint256 _tokenId,
+        address _currency,
+        uint256 _pricePerToken
+    ) external override nonReentrant {
+        Offer memory targetOffer = unlistedNftOffers[_assetContract][_tokenId];
+
+        require(
+            _currency == targetOffer.currency &&
+                _pricePerToken == targetOffer.pricePerToken,
+            "!PRICE"
+        );
+        require(targetOffer.expirationTimestamp > block.timestamp, "EXPIRED");
+
+        TokenType tokenType = getTokenType(_assetContract);
+        // Check whether token owner owns and has approved `quantityToBuy` amount of listing tokens from the listing.
+        validateOwnershipAndApproval(
+            _msgSender(),
+            _assetContract,
+            _tokenId,
+            targetOffer.quantityWanted,
+            tokenType
+        );
+
+        delete unlistedNftOffers[_assetContract][_tokenId];
+
+        payout(
+            targetOffer.offeror,
+            _msgSender(),
+            _currency,
+            targetOffer.pricePerToken * targetOffer.quantityWanted,
+            _assetContract,
+            _tokenId
+        );
+        transferListingTokens(
+            _msgSender(),
+            targetOffer.offeror,
+            targetOffer.quantityWanted,
+            _assetContract,
+            _tokenId,
+            tokenType
+        );
+
+        emit NewSale(
+            0,
+            _assetContract,
+            _tokenId,
+            _msgSender(),
+            targetOffer.offeror,
+            targetOffer.quantityWanted,
+            targetOffer.pricePerToken * targetOffer.quantityWanted
+        );
+    }
+
     /// @dev Performs a direct listing sale.
     function executeSale(
         Listing memory _targetListing,
@@ -463,24 +550,34 @@ contract MarketplaceV1 is
 
         _targetListing.quantity -= _listingTokenAmountToTransfer;
         listings[_targetListing.listingId] = _targetListing;
+        if (_targetListing.quantity == 0) {
+            delete listings[_targetListing.listingId];
+            delete isListed[_targetListing.assetContract][
+                _targetListing.tokenId
+            ];
+        }
 
         payout(
             _payer,
             _targetListing.tokenOwner,
             _currency,
             _currencyAmountToTransfer,
-            _targetListing
+            _targetListing.assetContract,
+            _targetListing.tokenId
         );
         transferListingTokens(
             _targetListing.tokenOwner,
             _receiver,
             _listingTokenAmountToTransfer,
-            _targetListing
+            _targetListing.assetContract,
+            _targetListing.tokenId,
+            _targetListing.tokenType
         );
 
         emit NewSale(
             _targetListing.listingId,
             _targetListing.assetContract,
+            _targetListing.tokenId,
             _targetListing.tokenOwner,
             _receiver,
             _listingTokenAmountToTransfer,
@@ -537,6 +634,13 @@ contract MarketplaceV1 is
             // Prevent potentially lost/locked native token.
             require(msg.value == 0, "no value needed");
 
+            // prevent users from updating the offer with a lesser amount.
+            Offer memory previousOffer = offers[_listingId][_msgSender()];
+            require(
+                newOffer.pricePerToken >= previousOffer.pricePerToken,
+                "no value needed"
+            );
+
             // Offers to direct listings cannot be made directly in native tokens.
             newOffer.currency = _currency == CurrencyTransferLib.NATIVE_TOKEN
                 ? nativeTokenWrapper
@@ -548,6 +652,68 @@ contract MarketplaceV1 is
 
             handleOffer(targetListing, newOffer);
         }
+    }
+
+    /// @dev Lets an account make an offer to unlisted nfts.
+    function unlistedNftOffer(
+        address _assetContract,
+        uint256 _tokenId,
+        uint256 _quantityWanted,
+        address _currency,
+        uint256 _pricePerToken,
+        uint256 _expirationTimestamp
+    ) external payable override nonReentrant {
+        require(isListed[_assetContract][_tokenId] == false, "LISTED");
+
+        // offers to unlisted nft with zero listing id - shares the same structure as direct & auction listing.
+        Offer memory newOffer = Offer({
+            listingId: 0,
+            offeror: _msgSender(),
+            quantityWanted: _quantityWanted,
+            currency: _currency,
+            pricePerToken: _pricePerToken,
+            expirationTimestamp: _expirationTimestamp
+        });
+
+        require(msg.value == 0, "no value needed");
+
+        Offer memory currentOffer = unlistedNftOffers[_assetContract][_tokenId];
+        require(
+            isNewWinningBid(
+                0,
+                currentOffer.pricePerToken * currentOffer.quantityWanted,
+                newOffer.pricePerToken * newOffer.quantityWanted
+            ),
+            "not winning bid."
+        );
+
+        // Get token type
+        TokenType tokenTypeOfListing = getTokenType(_assetContract);
+        // Offers to direct listings cannot be made directly in native tokens.
+        newOffer.currency = _currency == CurrencyTransferLib.NATIVE_TOKEN
+            ? nativeTokenWrapper
+            : _currency;
+        newOffer.quantityWanted = getSafeQuantity(
+            tokenTypeOfListing,
+            _quantityWanted
+        );
+
+        validateERC20BalAndAllowance(
+            _msgSender(),
+            _currency,
+            _pricePerToken * _quantityWanted
+        );
+
+        unlistedNftOffers[_assetContract][_tokenId] = newOffer;
+
+        emit NewUnlistedNftOffer(
+            _assetContract,
+            _tokenId,
+            _msgSender(),
+            _quantityWanted,
+            _pricePerToken * _quantityWanted,
+            _currency
+        );
     }
 
     /// @dev Processes a new offer to a direct listing.
@@ -571,6 +737,7 @@ contract MarketplaceV1 is
 
         emit NewOffer(
             _targetListing.listingId,
+            _targetListing.assetContract,
             _newOffer.offeror,
             _targetListing.listingType,
             _newOffer.quantityWanted,
@@ -644,6 +811,7 @@ contract MarketplaceV1 is
 
         emit NewOffer(
             _targetListing.listingId,
+            _targetListing.assetContract,
             _incomingBid.offeror,
             _targetListing.listingType,
             _incomingBid.quantityWanted,
@@ -674,8 +842,7 @@ contract MarketplaceV1 is
 
     /// @dev Lets an account close an auction for either the (1) winning bidder, or (2) auction creator.
     function closeAuction(
-        uint256 _listingId,
-        address _closeFor
+        uint256 _listingId
     ) external override nonReentrant onlyExistingListing(_listingId) {
         Listing memory targetListing = listings[_listingId];
 
@@ -699,14 +866,14 @@ contract MarketplaceV1 is
                 "cannot close auction before it has ended."
             );
 
-            // No `else if` to let auction close in 1 tx when targetListing.tokenOwner == targetBid.offeror.
-            if (_closeFor == targetListing.tokenOwner) {
-                _closeAuctionForAuctionCreator(targetListing, targetBid);
-            }
+            require(
+                _msgSender() == targetListing.tokenOwner ||
+                    _msgSender() == targetBid.offeror,
+                "only owner or offerer can close."
+            );
 
-            if (_closeFor == targetBid.offeror) {
-                _closeAuctionForBidder(targetListing, targetBid);
-            }
+            _closeAuctionForBidder(targetListing, targetBid);
+            _closeAuctionForAuctionCreator(targetListing, targetBid);
         }
     }
 
@@ -718,12 +885,15 @@ contract MarketplaceV1 is
         );
 
         delete listings[_targetListing.listingId];
+        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
 
         transferListingTokens(
             address(this),
             _targetListing.tokenOwner,
             _targetListing.quantity,
-            _targetListing
+            _targetListing.assetContract,
+            _targetListing.tokenId,
+            _targetListing.tokenType
         );
 
         emit AuctionClosed(
@@ -743,19 +913,17 @@ contract MarketplaceV1 is
         uint256 payoutAmount = _winningBid.pricePerToken *
             _targetListing.quantity;
 
-        _targetListing.quantity = 0;
-        _targetListing.endTime = block.timestamp;
-        listings[_targetListing.listingId] = _targetListing;
-
-        _winningBid.pricePerToken = 0;
-        winningBid[_targetListing.listingId] = _winningBid;
+        delete listings[_targetListing.listingId];
+        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
+        delete winningBid[_targetListing.listingId];
 
         payout(
             address(this),
             _targetListing.tokenOwner,
             _targetListing.currency,
             payoutAmount,
-            _targetListing
+            _targetListing.assetContract,
+            _targetListing.tokenId
         );
 
         emit AuctionClosed(
@@ -774,17 +942,17 @@ contract MarketplaceV1 is
     ) internal {
         uint256 quantityToSend = _winningBid.quantityWanted;
 
-        _targetListing.endTime = block.timestamp;
-        _winningBid.quantityWanted = 0;
-
-        winningBid[_targetListing.listingId] = _winningBid;
-        listings[_targetListing.listingId] = _targetListing;
+        delete listings[_targetListing.listingId];
+        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
+        delete winningBid[_targetListing.listingId];
 
         transferListingTokens(
             address(this),
             _winningBid.offeror,
             quantityToSend,
-            _targetListing
+            _targetListing.assetContract,
+            _targetListing.tokenId,
+            _targetListing.tokenType
         );
 
         emit AuctionClosed(
@@ -805,21 +973,23 @@ contract MarketplaceV1 is
         address _from,
         address _to,
         uint256 _quantity,
-        Listing memory _listing
+        address _assetContract,
+        uint256 _tokenId,
+        TokenType _tokenType
     ) internal {
-        if (_listing.tokenType == TokenType.ERC1155) {
-            IERC1155Upgradeable(_listing.assetContract).safeTransferFrom(
+        if (_tokenType == TokenType.ERC1155) {
+            IERC1155Upgradeable(_assetContract).safeTransferFrom(
                 _from,
                 _to,
-                _listing.tokenId,
+                _tokenId,
                 _quantity,
                 ""
             );
-        } else if (_listing.tokenType == TokenType.ERC721) {
-            IERC721Upgradeable(_listing.assetContract).safeTransferFrom(
+        } else if (_tokenType == TokenType.ERC721) {
+            IERC721Upgradeable(_assetContract).safeTransferFrom(
                 _from,
                 _to,
-                _listing.tokenId,
+                _tokenId,
                 ""
             );
         }
@@ -831,7 +1001,8 @@ contract MarketplaceV1 is
         address _payee,
         address _currencyToUse,
         uint256 _totalPayoutAmount,
-        Listing memory _listing
+        address _assetContract,
+        uint256 _tokenId
     ) internal {
         uint256 platformFeeBps = citizenIdContract.balanceOf(msg.sender) > 0
             ? tevanPlatformFeeBps
@@ -844,8 +1015,8 @@ contract MarketplaceV1 is
 
         // Distribute royalties. See Sushiswap's https://github.com/sushiswap/shoyu/blob/master/contracts/base/BaseExchange.sol#L296
         try
-            IERC2981Upgradeable(_listing.assetContract).royaltyInfo(
-                _listing.tokenId,
+            IERC2981Upgradeable(_assetContract).royaltyInfo(
+                _tokenId,
                 _totalPayoutAmount
             )
         returns (address royaltyFeeRecipient, uint256 royaltyFeeAmount) {
@@ -972,6 +1143,9 @@ contract MarketplaceV1 is
         if (_currency == CurrencyTransferLib.NATIVE_TOKEN) {
             require(msg.value == settledTotalPrice, "msg.value != price");
         } else {
+            // Prevent potentially lost/locked native token.
+            require(msg.value == 0, "no value needed");
+
             validateERC20BalAndAllowance(_payer, _currency, settledTotalPrice);
         }
 
@@ -1047,8 +1221,8 @@ contract MarketplaceV1 is
         uint256 _tevanPlatformFeeBps,
         uint256 _nonTevanPlatformFeeBps
     ) external onlyOwner {
-        require(_tevanPlatformFeeBps <= MAX_BPS, "bps <= 10000.");
-        require(_nonTevanPlatformFeeBps <= MAX_BPS, "bps <= 10000.");
+        require(_tevanPlatformFeeBps <= PLATFORM_FEE_MAX_BPS, "bps <= 250.");
+        require(_nonTevanPlatformFeeBps <= PLATFORM_FEE_MAX_BPS, "bps <= 250.");
 
         platformFeeRecipient = _platformFeeRecipient;
         tevanPlatformFeeBps = uint64(_tevanPlatformFeeBps);

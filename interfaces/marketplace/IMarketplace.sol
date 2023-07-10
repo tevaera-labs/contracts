@@ -172,7 +172,8 @@ interface IMarketplace is IPlatformFee {
     event NewSale(
         uint256 indexed listingId,
         address indexed assetContract,
-        address indexed lister,
+        uint256 indexed tokenId,
+        address lister,
         address buyer,
         uint256 quantityBought,
         uint256 totalPricePaid
@@ -181,8 +182,19 @@ interface IMarketplace is IPlatformFee {
     /// @dev Emitted when (1) a new offer is made to a direct listing, or (2) when a new bid is made in an auction.
     event NewOffer(
         uint256 indexed listingId,
+        address indexed assetContract,
         address indexed offeror,
-        ListingType indexed listingType,
+        ListingType listingType,
+        uint256 quantityWanted,
+        uint256 totalOfferAmount,
+        address currency
+    );
+
+    /// @dev Emitted when a new offer is made to a unlisted nft.
+    event NewUnlistedNftOffer(
+        address indexed assetContract,
+        uint256 indexed tokenId,
+        address indexed offeror,
         uint256 quantityWanted,
         uint256 totalOfferAmount,
         address currency
@@ -260,9 +272,9 @@ interface IMarketplace is IPlatformFee {
     /**
      *  @notice Lets someone buy a given quantity of tokens from a direct listing by paying the fixed price.
      *
-     *  @param _listingId The uid of the direct lisitng to buy from.
+     *  @param _listingIds The list of uids of the direct lisitngs to buy from.
+     *  @param _quantitiesToBuy The list of amount of NFTs to buy from the direct listings with respect to listing ids.
      *  @param _buyFor The receiver of the NFT being bought.
-     *  @param _quantity The amount of NFTs to buy from the direct listing.
      *  @param _currency The currency to pay the price in.
      *  @param _totalPrice The total price to pay for the tokens being bought.
      *
@@ -274,9 +286,9 @@ interface IMarketplace is IPlatformFee {
      *              approval to transfer the tokens listed for sale.
      */
     function buy(
-        uint256 _listingId,
+        uint256[] calldata _listingIds,
+        uint256[] calldata _quantitiesToBuy,
         address _buyFor,
-        uint256 _quantity,
         address _currency,
         uint256 _totalPrice
     ) external payable;
@@ -314,6 +326,41 @@ interface IMarketplace is IPlatformFee {
     ) external payable;
 
     /**
+     *  @notice Lets someone make an offer to an unlisted nft.
+     *
+     *  @dev Each (asset contract, token ID) pair maps to a single unique offer. So e.g. if a buyer makes
+     *       makes two offers to the same direct listing, the last offer is counted as the buyer's
+     *       offer to that listing.
+     *
+     *  @param _assetContract    The asset contract address.
+     *
+     *  @param _tokenId          The unique token ID.
+     *
+     *  @param _quantityWanted   For auction listings: the 'quantity wanted' is the total amount of NFTs
+     *                           being auctioned, regardless of the value of `_quantityWanted` passed.
+     *                           For direct listings: `_quantityWanted` is the quantity of NFTs from the
+     *                           listing, for which the offer is being made.
+     *
+     *  @param _currency         For auction listings: the 'currency of the bid' is the currency accepted
+     *                           by the auction, regardless of the value of `_currency` passed. For direct
+     *                           listings: this is the currency in which the offer is made.
+     *
+     *  @param _pricePerToken    For direct listings: offered price per token. For auction listings: the bid
+     *                           amount per token. The total offer/bid amount is `_quantityWanted * _pricePerToken`.
+     *
+     *  @param _expirationTimestamp For aution listings: inapplicable. For direct listings: The timestamp after which
+     *                              the seller can no longer accept the offer.
+     */
+    function unlistedNftOffer(
+        address _assetContract,
+        uint256 _tokenId,
+        uint256 _quantityWanted,
+        address _currency,
+        uint256 _pricePerToken,
+        uint256 _expirationTimestamp
+    ) external payable;
+
+    /**
      * @notice Lets a listing's creator accept an offer to their direct listing.
      * @param _listingId The unique ID of the listing for which to accept the offer.
      * @param _offeror The address of the buyer whose offer is to be accepted.
@@ -328,12 +375,25 @@ interface IMarketplace is IPlatformFee {
     ) external;
 
     /**
+     * @notice Lets a listing's creator accept an offer to their direct listing.
+     * @param _assetContract The asset contract address.
+     * @param _tokenId The unique ID of the listing for which to accept the offer.
+     * @param _currency The currency of the offer that is to be accepted.
+     * @param _totalPrice The total price of the offer that is to be accepted.
+     */
+    function acceptUnlistedNftOffer(
+        address _assetContract,
+        uint256 _tokenId,
+        address _currency,
+        uint256 _totalPrice
+    ) external;
+
+    /**
      *  @notice Lets any account close an auction on behalf of either the (1) auction's creator, or (2) winning bidder.
      *              For (1): The auction creator is sent the the winning bid amount.
      *              For (2): The winning bidder is sent the auctioned NFTs.
      *
      *  @param _listingId The uid of the listing (the auction to close).
-     *  @param _closeFor For whom the auction is being closed - the auction creator or winning bidder.
      */
-    function closeAuction(uint256 _listingId, address _closeFor) external;
+    function closeAuction(uint256 _listingId) external;
 }
