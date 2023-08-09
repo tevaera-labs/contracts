@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.18;
 
-import "../citizenid/CitizenIDV1.sol";
+import "../citizenid/CitizenIDV2.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -19,7 +19,7 @@ contract MagicalPhoenixV1 is
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
-    CitizenIDV1 private citizenIdContract;
+    CitizenIDV2 private citizenIdContract;
 
     modifier isNotBlacklisted() {
         require(
@@ -34,13 +34,10 @@ contract MagicalPhoenixV1 is
         _;
     }
 
-    address payable public charityAddress;
-    uint16 public charityBps = 500; // default to 5%
-
-    uint256 public constant MAX_PHOENIXES = 10000;
-    uint256 public constant PHOENIX_PRICE = 15000000000000000; //0.015 ETH
-
-    address payable private safeAddress;
+    mapping(address => bool) public whitelisted;
+    uint256 public constant MAX_PHOENIXES = 5000;
+    /// @dev Contract level metadata.
+    string public contractURI;
 
     mapping(address => bool) private addressToHasMintedMap;
     mapping(uint256 => uint256) private availableTokens;
@@ -49,29 +46,27 @@ contract MagicalPhoenixV1 is
     string private tokenBaseUri;
 
     /// @dev Initializes the upgradable contract
-    /// @param _safeAddress the safe address
-    /// @param _charityAddress the charity address
     /// @param _citizenIdContract the citizen id contract address
+    /// @param _tokenBaseUri the token base uri
     function initialize(
-        address payable _safeAddress,
-        address payable _charityAddress,
-        CitizenIDV1 _citizenIdContract,
-        string calldata _tokenBaseUri
+        CitizenIDV2 _citizenIdContract,
+        string calldata _contractUri,
+        string calldata _tokenBaseUri,
+        address safeAddress
     ) external initializer {
         __ERC721_init("MagicalPhoenix", "PHOENIX");
         __ERC721Enumerable_init();
-        __ERC721Royalty_init();
         __Ownable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
+        __ERC721Royalty_init();
 
-        safeAddress = _safeAddress;
-        charityAddress = _charityAddress;
         citizenIdContract = _citizenIdContract;
+        contractURI = _contractUri;
         tokenBaseUri = _tokenBaseUri;
 
-        // set default royalty to 5%
-        _setDefaultRoyalty(msg.sender, 500);
+        // set default royalty to 2.5%
+        _setDefaultRoyalty(safeAddress, 250);
 
         // set random nonce starting index
         randomNonce = uint256(
@@ -103,14 +98,14 @@ contract MagicalPhoenixV1 is
         whenNotPaused
         nonReentrant
     {
+        // make sure caller is whitelisted
+        require(whitelisted[msg.sender] == true, "not whitelisted");
+
         // make sure caller has not already minted
         require(addressToHasMintedMap[msg.sender] == false, "already minted");
 
         // make sure phoenixes are not sold out
         require(totalSupply() + 1 <= MAX_PHOENIXES, "sold out");
-
-        // make sure caller is paying the right value
-        require(msg.value == PHOENIX_PRICE, "invalid amount");
 
         // get the random token id
         uint256 tokenId = getRandomAvailableTokenId(msg.sender, randomNonce);
@@ -128,55 +123,19 @@ contract MagicalPhoenixV1 is
         --numAvailableTokens;
     }
 
-    /// @dev Allows owner to withdraw funds. Specified percentage goes to charity by default
-    function withdrawFunds() external onlyOwner {
-        uint256 availableBalance = address(this).balance;
-        uint256 charityAmount = 0;
-
-        if (charityBps > 0) {
-            // make sure charity address is configured
-            require(charityAddress != address(0), "Missing charity address!");
-
-            // calculate the charity amount
-            charityAmount = (availableBalance / 10000) * charityBps;
-
-            // transfer charity funds to charity address
-            (bool charityTxSuccess, ) = payable(charityAddress).call{
-                value: (charityAmount)
-            }("");
-            // make sure the transaction was successful
-            require(charityTxSuccess, "Transfer to charity address failed.");
-        }
-
-        // make sure safe address is configured
-        require(safeAddress != address(0), "Missing safe address!");
-
-        uint256 amountAfterCharity = availableBalance - charityAmount;
-        (bool safeTxSuccess, ) = payable(safeAddress).call{
-            value: (amountAfterCharity)
-        }("");
-        require(safeTxSuccess, "Transfer to safe address failed.");
+    /// @dev Lets a contract admin set the URI for the contract-level metadata.
+    function setContractURI(string calldata _uri) external onlyOwner {
+        contractURI = _uri;
     }
 
-    /// @dev Allows owner to update charity address and charity share in basis points
-    /// @param _charity a charity wallet address
-    /// @param _charityBps a charity share in percentage (basis points) i.e. 100 for 1%
-    function updateCharityConfig(
-        address payable _charity,
-        uint16 _charityBps
+    /// @dev Sets the royalty info
+    /// @param _safeAddress the royalty receiver address
+    /// @param _royaltyBps the royalty percentage in basis points
+    function setRoyaltyInfo(
+        address _safeAddress,
+        uint8 _royaltyBps
     ) external onlyOwner whenNotPaused {
-        require(charityAddress != address(0), "Invalid address!");
-        charityAddress = _charity;
-        charityBps = _charityBps;
-    }
-
-    /// @dev Allows owner to update the safe address
-    /// @param _safeAddress a safe wallet address
-    function updateSafeAddress(
-        address payable _safeAddress
-    ) external onlyOwner whenNotPaused {
-        require(_safeAddress != address(0), "Invalid address!");
-        safeAddress = _safeAddress;
+        _setDefaultRoyalty(_safeAddress, _royaltyBps);
     }
 
     /// @dev Sets the token base uri
@@ -185,6 +144,44 @@ contract MagicalPhoenixV1 is
         string calldata _tokenBaseUri
     ) external onlyOwner whenNotPaused {
         tokenBaseUri = _tokenBaseUri;
+    }
+
+    /// @dev Allows owner to whitelist wallet addresses
+    /// @param addresses the list of wallet addresses that need to be whitelisted
+    function whitelistAddresses(
+        address[] calldata addresses
+    ) external onlyOwner whenNotPaused {
+        uint256 len = addresses.length;
+        for (uint256 i = 0; i < len; ) {
+            require(addresses[i] != address(0), "Invalid address");
+
+            if (!whitelisted[addresses[i]]) {
+                whitelisted[addresses[i]] = true;
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @dev Allows owner to remove wallet addresses from the whitelist
+    /// @param addresses the list of wallet addresses that need to be removed from whitelist
+    function removeWhitelistAddresses(
+        address[] calldata addresses
+    ) external onlyOwner whenNotPaused {
+        uint256 len = addresses.length;
+        for (uint256 i = 0; i < len; ) {
+            require(addresses[i] != address(0), "Invalid address");
+
+            if (!whitelisted[addresses[i]]) {
+                whitelisted[addresses[i]] = false;
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     // ----- system default functions -----

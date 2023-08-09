@@ -87,8 +87,8 @@ contract MarketplaceV1 is
     /// @dev Mapping from uid of listing => listing info.
     mapping(uint256 => Listing) public listings;
 
-    /// @dev Mapping from asset contract of listed nft => token id => whether it's listed.
-    mapping(address => mapping(uint256 => bool)) public isListed;
+    /// @dev Mapping from asset contract of listed nft => token id => listing id.
+    mapping(address => mapping(uint256 => uint256)) public nftListingRegistry;
 
     /// @dev Mapping from uid of a direct listing => offeror address => offer made to the direct listing by the respective offeror.
     mapping(uint256 => mapping(address => Offer)) public offers;
@@ -203,7 +203,7 @@ contract MarketplaceV1 is
     /// @dev Lets a token owner list tokens for sale: Direct Listing or Auction.
     function createListing(ListingParameters memory _params) external override {
         require(
-            isListed[_params.assetContract][_params.tokenId] == false,
+            nftListingRegistry[_params.assetContract][_params.tokenId] == 0,
             "EXISTING"
         );
         // Get values to populate `Listing`.
@@ -223,7 +223,6 @@ contract MarketplaceV1 is
         if (startTime < block.timestamp) {
             // do not allow listing to start in the past (1 hour buffer)
             require(block.timestamp - startTime < 1 hours, "ST");
-            startTime = block.timestamp;
         }
 
         validateOwnershipAndApproval(
@@ -250,7 +249,9 @@ contract MarketplaceV1 is
         });
 
         listings[listingId] = newListing;
-        isListed[newListing.assetContract][newListing.tokenId] = true;
+        nftListingRegistry[newListing.assetContract][
+            newListing.tokenId
+        ] = listingId;
 
         // remove any offers made prior to listing.
         delete unlistedNftOffers[_params.assetContract][_params.tokenId];
@@ -309,7 +310,6 @@ contract MarketplaceV1 is
         if (_startTime > 0 && _startTime < block.timestamp) {
             // do not allow listing to start in the past (1 hour buffer)
             require(block.timestamp - _startTime < 1 hours, "ST");
-            _startTime = block.timestamp;
         }
 
         uint256 newStartTime = _startTime == 0
@@ -380,7 +380,9 @@ contract MarketplaceV1 is
         require(targetListing.listingType == ListingType.Direct, "!DIRECT");
 
         delete listings[_listingId];
-        delete isListed[targetListing.assetContract][targetListing.tokenId];
+        delete nftListingRegistry[targetListing.assetContract][
+            targetListing.tokenId
+        ];
 
         emit ListingRemoved(_listingId, targetListing.tokenOwner);
     }
@@ -406,7 +408,7 @@ contract MarketplaceV1 is
 
         for (uint256 i = 0; i < _listingIds.length; ) {
             uint256 _listingId = _listingIds[i];
-            Listing storage targetListing = listings[_listingId];
+            Listing memory targetListing = listings[_listingId];
 
             require(targetListing.assetContract != address(0), "DNE");
 
@@ -552,7 +554,7 @@ contract MarketplaceV1 is
         listings[_targetListing.listingId] = _targetListing;
         if (_targetListing.quantity == 0) {
             delete listings[_targetListing.listingId];
-            delete isListed[_targetListing.assetContract][
+            delete nftListingRegistry[_targetListing.assetContract][
                 _targetListing.tokenId
             ];
         }
@@ -565,6 +567,7 @@ contract MarketplaceV1 is
             _targetListing.assetContract,
             _targetListing.tokenId
         );
+
         transferListingTokens(
             _targetListing.tokenOwner,
             _receiver,
@@ -663,7 +666,7 @@ contract MarketplaceV1 is
         uint256 _pricePerToken,
         uint256 _expirationTimestamp
     ) external payable override nonReentrant {
-        require(isListed[_assetContract][_tokenId] == false, "LISTED");
+        require(nftListingRegistry[_assetContract][_tokenId] == 0, "LISTED");
 
         // offers to unlisted nft with zero listing id - shares the same structure as direct & auction listing.
         Offer memory newOffer = Offer({
@@ -765,6 +768,7 @@ contract MarketplaceV1 is
             _targetListing.buyoutPricePerToken * _targetListing.quantity
         ) {
             _closeAuctionForBidder(_targetListing, _incomingBid);
+            _closeAuctionForAuctionCreator(_targetListing, _incomingBid);
         } else {
             /**
              *      If there's an exisitng winning bid, incoming bid amount must be bid buffer % greater.
@@ -885,7 +889,9 @@ contract MarketplaceV1 is
         );
 
         delete listings[_targetListing.listingId];
-        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
+        delete nftListingRegistry[_targetListing.assetContract][
+            _targetListing.tokenId
+        ];
 
         transferListingTokens(
             address(this),
@@ -914,7 +920,9 @@ contract MarketplaceV1 is
             _targetListing.quantity;
 
         delete listings[_targetListing.listingId];
-        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
+        delete nftListingRegistry[_targetListing.assetContract][
+            _targetListing.tokenId
+        ];
         delete winningBid[_targetListing.listingId];
 
         payout(
@@ -943,7 +951,9 @@ contract MarketplaceV1 is
         uint256 quantityToSend = _winningBid.quantityWanted;
 
         delete listings[_targetListing.listingId];
-        delete isListed[_targetListing.assetContract][_targetListing.tokenId];
+        delete nftListingRegistry[_targetListing.assetContract][
+            _targetListing.tokenId
+        ];
         delete winningBid[_targetListing.listingId];
 
         transferListingTokens(

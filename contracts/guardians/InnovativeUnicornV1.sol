@@ -10,11 +10,11 @@ import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 
 import "../external/layer-zero/ONFT721CoreUpgradeable.sol";
 
-/// @title NomadicYeti NFT contract
+/// @title InnovativeUnicorn NFT contract
 /// @author Tevaera Labs
-/// @notice Allows users to mint the guardian ONFT of NomadicYeti
+/// @notice Allows users to mint the guardian ONFT of InnovativeUnicorn
 /// @dev It extends ERC721 and ERC2981 standards
-contract NomadicYetiV1 is
+contract InnovativeUnicornV1 is
     ERC721RoyaltyUpgradeable,
     ERC721EnumerableUpgradeable,
     PausableUpgradeable,
@@ -50,7 +50,7 @@ contract NomadicYetiV1 is
         string calldata _contractUri,
         string calldata _tokenBaseUri
     ) internal initializer {
-        __ERC721_init("NomadicYeti", "YETI");
+        __ERC721_init("InnovativeUnicorn", "UNICORN");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
         __ONFT721CoreUpgradeable_init(_minGasToTransferAndStore, _lzEndpoint);

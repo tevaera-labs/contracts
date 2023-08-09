@@ -8,13 +8,13 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721Enumer
 import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721RoyaltyUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 
-import "../external/layer-zero/ONFT721CoreUpgradeable.sol";
+import "../../external/layer-zero/ONFT721CoreUpgradeable.sol";
 
-/// @title NomadicYeti NFT contract
+/// @title BalancerDragon NFT contract
 /// @author Tevaera Labs
-/// @notice Allows users to mint the guardian ONFT of NomadicYeti
+/// @notice Allows users to mint the guardian ONFT of BalancerDragon
 /// @dev It extends ERC721 and ERC2981 standards
-contract NomadicYetiV1 is
+contract BalancerDragonV1 is
     ERC721RoyaltyUpgradeable,
     ERC721EnumerableUpgradeable,
     PausableUpgradeable,
@@ -23,12 +23,7 @@ contract NomadicYetiV1 is
 {
     using CountersUpgradeable for CountersUpgradeable.Counter;
 
-    /// @dev the safe address
-    address payable private safeAddress;
-
     CountersUpgradeable.Counter private tokenIdCounter;
-
-    mapping(address => bool) private addressToHasMintedMap;
 
     /// @dev the token base uri
     string private tokenBaseUri;
@@ -36,21 +31,14 @@ contract NomadicYetiV1 is
     /// @dev Contract level metadata.
     string public contractURI;
 
-    //// @dev the guardian bundle contract address
-    address public guardianBundler;
-
-    /// @dev the token price in ETH
-    uint256 public tokenPrice;
-
     function initialize(
         address _lzEndpoint,
         address _safeAddress,
         uint256 _minGasToTransferAndStore,
-        uint256 _tokenPrice,
         string calldata _contractUri,
         string calldata _tokenBaseUri
     ) internal initializer {
-        __ERC721_init("NomadicYeti", "YETI");
+        __ERC721_init("BalancerDragon", "DRAGON");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
         __ONFT721CoreUpgradeable_init(_minGasToTransferAndStore, _lzEndpoint);
@@ -59,69 +47,16 @@ contract NomadicYetiV1 is
 
         // set contract uri which contains contract level metadata
         contractURI = _contractUri;
-        // set the safe address
-        safeAddress = payable(_safeAddress);
         // set token base uri
         tokenBaseUri = _tokenBaseUri;
-        // set token price
-        tokenPrice = _tokenPrice;
-
-        // increament the counter
-        tokenIdCounter.increment();
 
         // set default royalty to 2.5%
         _setDefaultRoyalty(_safeAddress, 250);
     }
 
-    /// @dev Mints Guardian NFT
-    function mint() external payable whenNotPaused nonReentrant {
-        // price validation
-        require(msg.value == tokenPrice, "Invalid amount");
-
-        // make sure caller has not already minted
-        require(addressToHasMintedMap[msg.sender] == false, "already minted");
-
-        // get the token id & update the counter
-        uint256 tokenId = tokenIdCounter.current();
-        tokenIdCounter.increment();
-
-        // mint the guardian nft
-        _mint(msg.sender, tokenId);
-
-        // mark address as minted
-        addressToHasMintedMap[msg.sender] = true;
-    }
-
-    /// @dev Mints Guardian NFT. It's accessible only through guardian bundler
-    function mintForBundler() external whenNotPaused nonReentrant {
-        // make sure caller has not already minted
-        require(msg.sender == guardianBundler, "not accessible");
-
-        // make sure caller has not already minted
-        require(addressToHasMintedMap[msg.sender] == false, "already minted");
-
-        // get the token id & update the counter
-        uint256 tokenId = tokenIdCounter.current();
-        tokenIdCounter.increment();
-
-        // mint the guardian nft
-        _mint(msg.sender, tokenId);
-
-        // mark address as minted
-        addressToHasMintedMap[msg.sender] = true;
-    }
-
     /// @dev Lets a contract admin set the URI for the contract-level metadata.
     function setContractURI(string calldata _uri) external onlyOwner {
         contractURI = _uri;
-    }
-
-    /// @dev Sets the guardian bundler address
-    /// @param _guardianBundler the guardian bundler address
-    function setGuardianBundler(
-        address _guardianBundler
-    ) external onlyOwner whenNotPaused {
-        guardianBundler = _guardianBundler;
     }
 
     /// @dev Sets the token base uri
@@ -130,50 +65,6 @@ contract NomadicYetiV1 is
         string calldata _tokenBaseUri
     ) external onlyOwner whenNotPaused {
         tokenBaseUri = _tokenBaseUri;
-    }
-
-    /// @dev Sets the token price
-    /// @param _tokenPrice the token price in ETH
-    function setTokenPrice(uint256 _tokenPrice) external onlyOwner {
-        tokenPrice = _tokenPrice;
-    }
-
-    /// @dev Allows owner to update the safe wallet address
-    /// @param _safeAddress the safe wallet address
-    function updateSafeAddress(
-        address payable _safeAddress
-    ) external onlyOwner {
-        require(_safeAddress != address(0), "Invalid address!");
-        safeAddress = _safeAddress;
-    }
-
-    /// @dev Withdraws the funds
-    function withdraw(address token, uint256 amount) external onlyOwner {
-        if (token == address(0)) {
-            // Withdraw Ether
-            require(amount > 0, "Amount must be greater than zero");
-            require(
-                address(this).balance >= amount,
-                "Insufficient Ether balance"
-            );
-
-            // Transfer Ether to the owner
-            (bool success, ) = payable(msg.sender).call{value: amount}("");
-            require(success, "Ether transfer failed");
-        } else {
-            // Withdraw ERC-20 tokens
-            require(amount > 0, "Amount must be greater than zero");
-
-            IERC20Upgradeable erc20Token = IERC20Upgradeable(token);
-            uint256 contractBalance = erc20Token.balanceOf(address(this));
-            require(contractBalance >= amount, "Insufficient token balance");
-
-            // Transfer ERC-20 tokens to the owner
-            require(
-                erc20Token.transfer(msg.sender, amount),
-                "Token transfer failed"
-            );
-        }
     }
 
     /// @dev Debits a token from user's account to transfer it to another chain
