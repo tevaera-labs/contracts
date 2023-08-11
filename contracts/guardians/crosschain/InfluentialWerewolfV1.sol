@@ -23,6 +23,9 @@ contract InfluentialWerewolfV1 is
 {
     using CountersUpgradeable for CountersUpgradeable.Counter;
 
+    /// @dev the safe address
+    address payable private safeAddress;
+
     CountersUpgradeable.Counter private tokenIdCounter;
 
     /// @dev the token base uri
@@ -34,19 +37,27 @@ contract InfluentialWerewolfV1 is
     function initialize(
         address _lzEndpoint,
         address _safeAddress,
+        uint256 _crosschainTransferFee,
         uint256 _minGasToTransferAndStore,
         string calldata _contractUri,
         string calldata _tokenBaseUri
-    ) internal initializer {
+    ) external initializer {
         __ERC721_init("InfluentialWerewolf", "WEREWOL");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
-        __ONFT721CoreUpgradeable_init(_minGasToTransferAndStore, _lzEndpoint);
+        __ONFT721CoreUpgradeable_init(
+            _minGasToTransferAndStore,
+            _lzEndpoint,
+            _crosschainTransferFee,
+            _safeAddress
+        );
         __Pausable_init();
         __ReentrancyGuard_init();
 
         // set contract uri which contains contract level metadata
         contractURI = _contractUri;
+        // set safe address
+        safeAddress = payable(_safeAddress);
         // set token base uri
         tokenBaseUri = _tokenBaseUri;
 
@@ -65,6 +76,41 @@ contract InfluentialWerewolfV1 is
         string calldata _tokenBaseUri
     ) external onlyOwner whenNotPaused {
         tokenBaseUri = _tokenBaseUri;
+    }
+
+    /// @dev Allows owner to update the safe wallet address
+    /// @param _safeAddress the safe wallet address
+    function updateSafeAddress(
+        address payable _safeAddress
+    ) external onlyOwner {
+        require(_safeAddress != address(0), "Invalid address!");
+        safeAddress = _safeAddress;
+    }
+
+    /// @dev Withdraws the funds
+    function withdraw(address token, uint256 amount) external onlyOwner {
+        if (token == address(0)) {
+            // Withdraw Ether
+            require(amount > 0, "Amount must be greater than zero");
+            require(
+                address(this).balance >= amount,
+                "Insufficient Ether balance"
+            );
+            // Transfer Ether to the owner
+            (bool success, ) = payable(msg.sender).call{value: amount}("");
+            require(success, "Ether transfer failed");
+        } else {
+            // Withdraw ERC-20 tokens
+            require(amount > 0, "Amount must be greater than zero");
+            IERC20Upgradeable erc20Token = IERC20Upgradeable(token);
+            uint256 contractBalance = erc20Token.balanceOf(address(this));
+            require(contractBalance >= amount, "Insufficient token balance");
+            // Transfer ERC-20 tokens to the owner
+            require(
+                erc20Token.transfer(msg.sender, amount),
+                "Token transfer failed"
+            );
+        }
     }
 
     /// @dev Debits a token from user's account to transfer it to another chain

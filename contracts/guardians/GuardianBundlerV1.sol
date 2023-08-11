@@ -28,7 +28,7 @@ contract GuardianBundlerV1 is OwnableUpgradeable, PausableUpgradeable {
     /// @dev the bundle price in ETH
     uint256 public bundlePrice;
 
-    constructor(
+    function initialize(
         BalancerDragonV1 _balancerDragon,
         InfluentialWerewolfV1 _influentialWerewolf,
         InnovativeUnicornV1 _innovativeUnicorn,
@@ -36,7 +36,7 @@ contract GuardianBundlerV1 is OwnableUpgradeable, PausableUpgradeable {
         SimplifierKrakenV1 _simplifierKraken,
         address _safeAddress,
         uint256 _bundlePrice
-    ) {
+    ) external initializer {
         balancerDragon = _balancerDragon;
         influentialWerewolf = _influentialWerewolf;
         innovativeUnicorn = _innovativeUnicorn;

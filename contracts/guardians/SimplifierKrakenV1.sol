@@ -45,15 +45,21 @@ contract SimplifierKrakenV1 is
     function initialize(
         address _lzEndpoint,
         address _safeAddress,
+        uint256 _crosschainTransferFee,
         uint256 _minGasToTransferAndStore,
         uint256 _tokenPrice,
         string calldata _contractUri,
         string calldata _tokenBaseUri
-    ) internal initializer {
+    ) external initializer {
         __ERC721_init("SimplifierKraken", "KRAKEN");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
-        __ONFT721CoreUpgradeable_init(_minGasToTransferAndStore, _lzEndpoint);
+        __ONFT721CoreUpgradeable_init(
+            _minGasToTransferAndStore,
+            _lzEndpoint,
+            _crosschainTransferFee,
+            _safeAddress
+        );
         __Pausable_init();
         __ReentrancyGuard_init();
 

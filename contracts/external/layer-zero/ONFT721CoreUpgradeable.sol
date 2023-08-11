@@ -22,27 +22,39 @@ abstract contract ONFT721CoreUpgradeable is
     }
 
     uint256 public minGasToTransferAndStore; // min amount of gas required to transfer, and also store the payload
+    uint256 public platformFee; // min amount of gas required to transfer, and also store the payload
+    address public platformFeeRecipient; // min amount of gas required to transfer, and also store the payload
     mapping(uint16 => uint256) public dstChainIdToBatchLimit;
     mapping(uint16 => uint256) public dstChainIdToTransferGas; // per transfer amount of gas required to mint/transfer on the dst
     mapping(bytes32 => StoredCredit) public storedCredits;
 
     function __ONFT721CoreUpgradeable_init(
         uint256 _minGasToTransferAndStore,
-        address _lzEndpoint
+        address _lzEndpoint,
+        uint256 _platformFee,
+        address _platformFeeRecipient
     ) internal onlyInitializing {
         __Ownable_init_unchained();
         __LzAppUpgradeable_init_unchained(_lzEndpoint);
-        __ONFT721CoreUpgradeable_init_unchained(_minGasToTransferAndStore);
+        __ONFT721CoreUpgradeable_init_unchained(
+            _minGasToTransferAndStore,
+            _platformFee,
+            _platformFeeRecipient
+        );
     }
 
     function __ONFT721CoreUpgradeable_init_unchained(
-        uint256 _minGasToTransferAndStore
+        uint256 _minGasToTransferAndStore,
+        uint256 _platformFee,
+        address _platformFeeRecipient
     ) internal onlyInitializing {
         require(
             _minGasToTransferAndStore > 0,
             "ONFT721: minGasToTransferAndStore must be > 0"
         );
         minGasToTransferAndStore = _minGasToTransferAndStore;
+        platformFee = _platformFee;
+        platformFeeRecipient = _platformFeeRecipient;
     }
 
     function supportsInterface(
@@ -66,14 +78,17 @@ abstract contract ONFT721CoreUpgradeable is
         bool _useZro,
         bytes memory _adapterParams
     ) public view virtual override returns (uint nativeFee, uint zroFee) {
-        return
-            estimateSendBatchFee(
-                _dstChainId,
-                _toAddress,
-                _toSingletonArray(_tokenId),
-                _useZro,
-                _adapterParams
-            );
+        (uint fee, uint zro) = estimateSendBatchFee(
+            _dstChainId,
+            _toAddress,
+            _toSingletonArray(_tokenId),
+            _useZro,
+            _adapterParams
+        );
+
+        // add platform fee to layer-zero fee estimation
+        nativeFee = fee + platformFee;
+        zroFee = zro;
     }
 
     function estimateSendBatchFee(
@@ -84,14 +99,17 @@ abstract contract ONFT721CoreUpgradeable is
         bytes memory _adapterParams
     ) public view virtual override returns (uint nativeFee, uint zroFee) {
         bytes memory payload = abi.encode(_toAddress, _tokenIds);
-        return
-            lzEndpoint.estimateFees(
-                _dstChainId,
-                address(this),
-                payload,
-                _useZro,
-                _adapterParams
-            );
+        (uint fee, uint zro) = lzEndpoint.estimateFees(
+            _dstChainId,
+            address(this),
+            payload,
+            _useZro,
+            _adapterParams
+        );
+
+        // add platform fee to layer-zero fee estimation
+        nativeFee = fee + (platformFee * _tokenIds.length);
+        zroFee = zro;
     }
 
     function sendFrom(
@@ -143,6 +161,11 @@ abstract contract ONFT721CoreUpgradeable is
         address _zroPaymentAddress,
         bytes memory _adapterParams
     ) internal virtual {
+        // make sure refund address is safe
+        require(
+            _refundAddress == platformFeeRecipient,
+            "Invalid refund address"
+        );
         // allow 1 by default
         require(_tokenIds.length > 0, "LzApp: tokenIds[] is empty");
         require(
@@ -169,7 +192,7 @@ abstract contract ONFT721CoreUpgradeable is
             _refundAddress,
             _zroPaymentAddress,
             _adapterParams,
-            msg.value
+            msg.value - (platformFee * _tokenIds.length)
         );
         emit SendToChain(_dstChainId, _from, _toAddress, _tokenIds);
     }
@@ -273,6 +296,15 @@ abstract contract ONFT721CoreUpgradeable is
             "ONFT721: minGasToTransferAndStore must be > 0"
         );
         minGasToTransferAndStore = _minGasToTransferAndStore;
+    }
+
+    // sets platform fee
+    function setPlatformFee(
+        uint256 _platformFee,
+        address _platformFeeRecipient
+    ) external onlyOwner {
+        platformFee = _platformFee;
+        platformFeeRecipient = _platformFeeRecipient;
     }
 
     // ensures enough gas in adapter params to handle batch transfer gas amounts on the dst
