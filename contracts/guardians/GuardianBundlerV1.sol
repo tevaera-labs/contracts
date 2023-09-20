@@ -53,11 +53,21 @@ contract GuardianBundlerV1 is OwnableUpgradeable, PausableUpgradeable {
         require(msg.value == bundlePrice, "Invalid amount");
 
         // mint all guardians
-        balancerDragon.mintForBundler();
-        influentialWerewolf.mintForBundler();
-        innovativeUnicorn.mintForBundler();
-        nomadicYeti.mintForBundler();
-        simplifierKraken.mintForBundler();
+        if (balancerDragon.balanceOf(msg.sender) == 0) {
+            balancerDragon.mintForBundler(msg.sender);
+        }
+        if (influentialWerewolf.balanceOf(msg.sender) == 0) {
+            influentialWerewolf.mintForBundler(msg.sender);
+        }
+        if (innovativeUnicorn.balanceOf(msg.sender) == 0) {
+            innovativeUnicorn.mintForBundler(msg.sender);
+        }
+        if (nomadicYeti.balanceOf(msg.sender) == 0) {
+            nomadicYeti.mintForBundler(msg.sender);
+        }
+        if (simplifierKraken.balanceOf(msg.sender) == 0) {
+            simplifierKraken.mintForBundler(msg.sender);
+        }
     }
 
     /// @dev Owner can update the citizen id contract address
@@ -106,7 +116,6 @@ contract GuardianBundlerV1 is OwnableUpgradeable, PausableUpgradeable {
     function withdraw(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) {
             // Withdraw Ether
-            require(amount > 0, "Amount must be greater than zero");
             require(
                 address(this).balance >= amount,
                 "Insufficient Ether balance"
@@ -117,8 +126,6 @@ contract GuardianBundlerV1 is OwnableUpgradeable, PausableUpgradeable {
             require(success, "Ether transfer failed");
         } else {
             // Withdraw ERC-20 tokens
-            require(amount > 0, "Amount must be greater than zero");
-
             IERC20Upgradeable erc20Token = IERC20Upgradeable(token);
             uint256 contractBalance = erc20Token.balanceOf(address(this));
             require(contractBalance >= amount, "Insufficient token balance");

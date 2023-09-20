@@ -51,9 +51,10 @@ contract InfluentialWerewolfV1 is
         string calldata _contractUri,
         string calldata _tokenBaseUri
     ) external initializer {
-        __ERC721_init("InfluentialWerewolf", "WEREWOLF");
+        __ERC721_init("Influential Werewolf", "WEREWOLF");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
+        __Ownable_init_unchained();
         __ONFT721CoreUpgradeable_init(
             _minGasToTransferAndStore,
             _lzEndpoint,
@@ -99,22 +100,22 @@ contract InfluentialWerewolfV1 is
     }
 
     /// @dev Mints Guardian NFT. It's accessible only through guardian bundler
-    function mintForBundler() external whenNotPaused nonReentrant {
+    function mintForBundler(address _recipient) external nonReentrant {
         // make sure caller has not already minted
         require(msg.sender == guardianBundler, "not accessible");
 
         // make sure caller has not already minted
-        require(addressToHasMintedMap[msg.sender] == false, "already minted");
+        require(addressToHasMintedMap[_recipient] == false, "already minted");
 
         // get the token id & update the counter
         uint256 tokenId = tokenIdCounter.current();
         tokenIdCounter.increment();
 
         // mint the guardian nft
-        _mint(msg.sender, tokenId);
+        _mint(_recipient, tokenId);
 
         // mark address as minted
-        addressToHasMintedMap[msg.sender] = true;
+        addressToHasMintedMap[_recipient] = true;
     }
 
     /// @dev Lets a contract admin set the URI for the contract-level metadata.
@@ -157,7 +158,6 @@ contract InfluentialWerewolfV1 is
     function withdraw(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) {
             // Withdraw Ether
-            require(amount > 0, "Amount must be greater than zero");
             require(
                 address(this).balance >= amount,
                 "Insufficient Ether balance"
@@ -168,8 +168,6 @@ contract InfluentialWerewolfV1 is
             require(success, "Ether transfer failed");
         } else {
             // Withdraw ERC-20 tokens
-            require(amount > 0, "Amount must be greater than zero");
-
             IERC20Upgradeable erc20Token = IERC20Upgradeable(token);
             uint256 contractBalance = erc20Token.balanceOf(address(this));
             require(contractBalance >= amount, "Insufficient token balance");

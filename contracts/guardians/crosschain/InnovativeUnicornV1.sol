@@ -42,9 +42,10 @@ contract InnovativeUnicornV1 is
         string calldata _contractUri,
         string calldata _tokenBaseUri
     ) external initializer {
-        __ERC721_init("InnovativeUnicorn", "UNICORN");
+        __ERC721_init("Innovative Unicorn", "UNICORN");
         __ERC721Enumerable_init();
         __ERC721Royalty_init();
+        __Ownable_init_unchained();
         __ONFT721CoreUpgradeable_init(
             _minGasToTransferAndStore,
             _lzEndpoint,
@@ -91,7 +92,6 @@ contract InnovativeUnicornV1 is
     function withdraw(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) {
             // Withdraw Ether
-            require(amount > 0, "Amount must be greater than zero");
             require(
                 address(this).balance >= amount,
                 "Insufficient Ether balance"
@@ -101,7 +101,6 @@ contract InnovativeUnicornV1 is
             require(success, "Ether transfer failed");
         } else {
             // Withdraw ERC-20 tokens
-            require(amount > 0, "Amount must be greater than zero");
             IERC20Upgradeable erc20Token = IERC20Upgradeable(token);
             uint256 contractBalance = erc20Token.balanceOf(address(this));
             require(contractBalance >= amount, "Insufficient token balance");
