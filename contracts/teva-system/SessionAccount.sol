@@ -63,12 +63,8 @@ contract SessionAccount is Ownable, Session, IAccount {
         );
 
         address signer = ECDSA.recover(txHash, _transaction.signature);
-        address to = address(uint160(_transaction.to));
 
-        require(
-            owner() == signer || inSession(signer, to),
-            "Signature is invalid"
-        );
+        require(owner() == signer || inSession(signer), "Signature is invalid");
 
         magic = ACCOUNT_VALIDATION_SUCCESS_MAGIC;
     }
@@ -83,15 +79,19 @@ contract SessionAccount is Ownable, Session, IAccount {
 
     function _executeTransaction(Transaction calldata _transaction) internal {
         address to = address(uint160(_transaction.to));
-        uint256 value = _transaction.reserved[1];
+        uint128 value = Utils.safeCastToU128(_transaction.value);
         bytes memory data = _transaction.data;
 
         if (to == address(DEPLOYER_SYSTEM_CONTRACT)) {
-            SystemContractsCaller.systemCall(
-                uint32(gasleft()),
+            uint32 gas = Utils.safeCastToU32(gasleft());
+
+            // Note, that the deployer contract can only be called
+            // with a "systemCall" flag.
+            SystemContractsCaller.systemCallWithPropagatedRevert(
+                gas,
                 to,
-                uint128(_transaction.reserved[1]),
-                _transaction.data
+                value,
+                data
             );
         } else {
             bool success;

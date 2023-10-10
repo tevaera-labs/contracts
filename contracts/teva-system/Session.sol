@@ -8,34 +8,19 @@ contract Session is Ownable {
         uint256 version;
         uint256 expirationTime;
         bool expired;
-        mapping(address => bool) trustedAddressList;
     }
 
     mapping(address => SessionInfo) public sessions;
 
     function createSession(
         address authorizedSigner,
-        uint256 secondsUntilEndTime,
-        address[] calldata trustedAddresses
+        uint256 secondsUntilEndTime
     ) external onlyOwner {
         sessions[authorizedSigner].version += 1;
         sessions[authorizedSigner].expirationTime =
             block.timestamp +
             secondsUntilEndTime;
         sessions[authorizedSigner].expired = false;
-
-        uint256 len = trustedAddresses.length;
-        for (uint256 i = 0; i < len; ) {
-            require(trustedAddresses[i] != address(0), "Invalid address");
-
-            sessions[authorizedSigner].trustedAddressList[
-                trustedAddresses[i]
-            ] = true;
-
-            unchecked {
-                ++i;
-            }
-        }
     }
 
     function deleteSession(address authorizedSigner) external onlyOwner {
@@ -43,10 +28,7 @@ contract Session is Ownable {
         sessions[authorizedSigner].expired = true;
     }
 
-    function inSession(
-        address authorizedSigner,
-        address to
-    ) internal view returns (bool) {
+    function inSession(address authorizedSigner) internal view returns (bool) {
         if (sessions[authorizedSigner].expired) {
             return false;
         }
