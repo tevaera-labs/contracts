@@ -28,7 +28,7 @@ import "../../lib/CurrencyTransferLib.sol";
 import "../../lib/FeeType.sol";
 import "../citizenid/CitizenIDV2.sol";
 
-contract MarketplaceV1 is
+contract MarketplaceV2 is
     Initializable,
     IMarketplace,
     PausableUpgradeable,
@@ -202,10 +202,16 @@ contract MarketplaceV1 is
 
     /// @dev Lets a token owner list tokens for sale: Direct Listing or Auction.
     function createListing(ListingParameters memory _params) external override {
-        require(
-            nftListingRegistry[_params.assetContract][_params.tokenId] == 0,
-            "EXISTING"
-        );
+        // Check for existing listing
+        uint256 existingListingId = nftListingRegistry[_params.assetContract][
+            _params.tokenId
+        ];
+
+        // Removes an existing listing if found and prepares for a new listing
+        if (existingListingId != 0) {
+            _removeListing(existingListingId);
+        }
+
         // Get values to populate `Listing`.
         totalListings += 1;
         uint256 listingId = totalListings;
@@ -371,20 +377,30 @@ contract MarketplaceV1 is
         emit ListingUpdated(_listingId, targetListing.tokenOwner);
     }
 
-    /// @dev Lets a direct listing creator cancel their listing.
+    /// @dev Cancels a direct listing, can only be called by listing creator or the contract itself.
     function cancelDirectListing(
         uint256 _listingId
     ) external onlyListingCreator(_listingId) {
-        Listing memory targetListing = listings[_listingId];
+        require(_listingId != 0, "Invalid listing ID");
 
-        require(targetListing.listingType == ListingType.Direct, "!DIRECT");
+        _removeListing(_listingId);
+    }
 
-        delete listings[_listingId];
-        delete nftListingRegistry[targetListing.assetContract][
-            targetListing.tokenId
+    /// @dev Internal function to remove a listing, checks if it's direct before removing.
+    function _removeListing(uint256 _listingId) internal {
+        Listing storage listingToRemove = listings[_listingId];
+
+        require(
+            listingToRemove.listingType == ListingType.Direct,
+            "Can only remove direct listings"
+        );
+
+        emit ListingRemoved(_listingId, listingToRemove.tokenOwner);
+
+        delete nftListingRegistry[listingToRemove.assetContract][
+            listingToRemove.tokenId
         ];
-
-        emit ListingRemoved(_listingId, targetListing.tokenOwner);
+        delete listings[_listingId];
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -1151,7 +1167,7 @@ contract MarketplaceV1 is
 
         // Check: buyer owns and has approved sufficient currency for sale.
         if (_currency == CurrencyTransferLib.NATIVE_TOKEN) {
-            require(msg.value == settledTotalPrice, "msg.value != price");
+            require(msg.value >= settledTotalPrice, "msg.value != price");
         } else {
             // Prevent potentially lost/locked native token.
             require(msg.value == 0, "no value needed");

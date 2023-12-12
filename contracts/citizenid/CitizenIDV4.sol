@@ -12,7 +12,7 @@ import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 /// @author Tevaera Labs
 /// @notice Users need to mint the Citizen ID to become a Tevan
 /// @dev It extends ERC721 standard
-contract CitizenIDV3 is
+contract CitizenIDV4 is
     ERC721EnumerableUpgradeable,
     ERC721URIStorageUpgradeable,
     OwnableUpgradeable,
@@ -266,7 +266,12 @@ contract CitizenIDV3 is
         override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
         returns (string memory)
     {
-        return super.tokenURI(tokenId);
+        //////////////////////// V4 Changes ////////////////////////
+        // Return the same metadata URI for all tokens since they are identical.
+        // Due to the citizen ID count surpassing 500,000, managing millions of data entries on IPFS becomes challenging.
+
+        // return super.tokenURI(tokenId);
+        return tokenBaseUri;
     }
 
     //////////////////////// V3 Changes ////////////////////////

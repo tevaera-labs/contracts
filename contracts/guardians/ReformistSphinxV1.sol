@@ -174,9 +174,9 @@ contract ReformistSphinxV1 is
         public
         view
         override(
-            ERC721Upgradeable,
             ERC721RoyaltyUpgradeable,
-            ERC721EnumerableUpgradeable
+            ERC721EnumerableUpgradeable,
+            ERC721URIStorageUpgradeable
         )
         returns (bool)
     {
