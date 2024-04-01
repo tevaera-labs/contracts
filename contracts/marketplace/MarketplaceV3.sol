@@ -404,7 +404,7 @@ contract MarketplaceV3 is
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Direct lisitngs sales logic
+                    Direct listings sales logic
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Lets an account buy a given quantity of tokens from a listing.
@@ -865,7 +865,7 @@ contract MarketplaceV3 is
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Auction lisitngs sales logic
+                    Auction listings sales logic
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Lets an account close an auction for either the (1) winning bidder, or (2) auction creator.
