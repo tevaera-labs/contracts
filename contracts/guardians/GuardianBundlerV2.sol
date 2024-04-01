@@ -52,7 +52,7 @@ contract GuardianBundlerV2 is OwnableUpgradeable, PausableUpgradeable {
     }
 
     /// @notice Users gets citizen id and karma points if eligible
-    /// @dev Mints citizen id and karma poins
+    /// @dev Mints citizen id and karma points
     function mintBundle() external payable whenNotPaused {
         // price validation
         require(msg.value == bundlePrice, "Invalid amount");
@@ -143,7 +143,7 @@ contract GuardianBundlerV2 is OwnableUpgradeable, PausableUpgradeable {
         }
     }
 
-    /// @dev Owner can pasue the claim
+    /// @dev Owner can pause the claim
     function pause() external onlyOwner whenNotPaused {
         _pause();
     }

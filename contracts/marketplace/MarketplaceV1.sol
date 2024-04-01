@@ -58,7 +58,7 @@ contract MarketplaceV1 is
     /// @dev The max bps of the contract. So, 10_000 == 100 %
     uint64 public constant MAX_BPS = 10_000;
 
-    /// @dev The max platform fee bps that owner can set up to. 250 == 2.5 %
+    /// @dev The max platform fee bps that owner can set up to 250 == 2.5 %
     uint64 public constant PLATFORM_FEE_MAX_BPS = 250;
 
     /// @dev The % of primary sales collected as platform fees for tevans at discounted rate.
@@ -72,7 +72,7 @@ contract MarketplaceV1 is
 
     /// @dev
     /**
-     *  @dev The amount of time added to an auction's 'endTime', if a bid is made within `timeBuffer`
+     *  @dev The amount of time added to an auction's `endTime`, if a bid is made within `timeBuffer`
      *       seconds of the existing `endTime`. Default: 15 minutes.
      */
     uint64 public timeBuffer;
@@ -123,7 +123,7 @@ contract MarketplaceV1 is
         nativeTokenWrapper = _nativeTokenWrapper;
     }
 
-    /// @dev Initiliazes the contract, like a constructor.
+    /// @dev Initializes the contract, like a constructor.
     function initialize(
         string memory _contractURI,
         address[] memory _trustedForwarders,
@@ -1066,7 +1066,7 @@ contract MarketplaceV1 is
         );
     }
 
-    /// @dev Validates that `_addrToCheck` owns and has approved markeplace to transfer the appropriate amount of currency
+    /// @dev Validates that `_addrToCheck` owns and has approved marketplace to transfer the appropriate amount of currency
     function validateERC20BalAndAllowance(
         address _addrToCheck,
         address _currency,

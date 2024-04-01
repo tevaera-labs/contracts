@@ -123,7 +123,7 @@ contract MarketplaceV3 is
         nativeTokenWrapper = _nativeTokenWrapper;
     }
 
-    /// @dev Initiliazes the contract, like a constructor.
+    /// @dev Initializes the contract, like a constructor.
     function initialize(
         string memory _contractURI,
         address[] memory _trustedForwarders,
@@ -1082,7 +1082,7 @@ contract MarketplaceV3 is
         );
     }
 
-    /// @dev Validates that `_addrToCheck` owns and has approved markeplace to transfer the appropriate amount of currency
+    /// @dev Validates that `_addrToCheck` owns and has approved marketplace to transfer the appropriate amount of currency
     function validateERC20BalAndAllowance(
         address _addrToCheck,
         address _currency,

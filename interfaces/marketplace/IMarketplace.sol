@@ -282,7 +282,7 @@ interface IMarketplace is IPlatformFee {
      *          (1) buyer does not own or has not approved Marketplace to transfer the appropriate
      *              amount of currency (or hasn't sent the appropriate amount of native tokens)
      *
-     *          (2) the lister does not own or has removed Markeplace's
+     *          (2) the lister does not own or has removed marketplace's
      *              approval to transfer the tokens listed for sale.
      */
     function buy(
