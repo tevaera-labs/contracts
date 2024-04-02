@@ -28,7 +28,7 @@ contract Claim is Ownable, Pausable {
     }
 
     /// @notice Users gets citizen id and karma points if eligible
-    /// @dev Mints citizen id and karma poins
+    /// @dev Mints citizen id and karma points
     function claim() external payable isNotBlacklisted whenNotPaused {
         if (citizenIdContract.balanceOf(msg.sender) == 0) {
             citizenIdContract.claim{value: msg.value}(msg.sender);
@@ -53,7 +53,7 @@ contract Claim is Ownable, Pausable {
         kpContract = _newKpContract;
     }
 
-    /// @dev Owner can pasue the claim
+    /// @dev Owner can pause the claim
     function pause() external onlyOwner whenNotPaused {
         _pause();
     }

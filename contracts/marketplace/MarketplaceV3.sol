@@ -123,7 +123,7 @@ contract MarketplaceV3 is
         nativeTokenWrapper = _nativeTokenWrapper;
     }
 
-    /// @dev Initiliazes the contract, like a constructor.
+    /// @dev Initializes the contract, like a constructor.
     function initialize(
         string memory _contractURI,
         address[] memory _trustedForwarders,
@@ -404,7 +404,7 @@ contract MarketplaceV3 is
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Direct lisitngs sales logic
+                    Direct listings sales logic
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Lets an account buy a given quantity of tokens from a listing.
@@ -865,7 +865,7 @@ contract MarketplaceV3 is
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Auction lisitngs sales logic
+                    Auction listings sales logic
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Lets an account close an auction for either the (1) winning bidder, or (2) auction creator.
@@ -1082,7 +1082,7 @@ contract MarketplaceV3 is
         );
     }
 
-    /// @dev Validates that `_addrToCheck` owns and has approved markeplace to transfer the appropriate amount of currency
+    /// @dev Validates that `_addrToCheck` owns and has approved marketplace to transfer the appropriate amount of currency
     function validateERC20BalAndAllowance(
         address _addrToCheck,
         address _currency,

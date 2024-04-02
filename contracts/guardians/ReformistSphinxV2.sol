@@ -108,7 +108,7 @@ contract ReformistSphinxV2 is
         _pause();
     }
 
-    /// @dev Allows owner to acticvate sale
+    /// @dev Allows owner to activate sale
     function unpause() public onlyOwner whenPaused {
         _unpause();
     }

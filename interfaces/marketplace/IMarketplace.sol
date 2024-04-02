@@ -226,9 +226,9 @@ interface IMarketplace is IPlatformFee {
      *  @notice Lets a listing's creator edit the listing's parameters. A direct listing can be edited whenever.
      *          An auction listing cannot be edited after the auction has started.
      *
-     *  @param _listingId            The uid of the lisitng to edit.
+     *  @param _listingId            The uid of the listing to edit.
      *
-     *  @param _quantityToList       The amount of NFTs to list for sale in the listing. For direct lisitngs, the contract
+     *  @param _quantityToList       The amount of NFTs to list for sale in the listing. For direct listings, the contract
      *                               only checks whether the listing creator owns and has approved Marketplace to transfer
      *                               `_quantityToList` amount of NFTs to list for sale. For auction listings, the contract
      *                               ensures that exactly `_quantityToList` amount of NFTs to list are escrowed.
@@ -265,14 +265,14 @@ interface IMarketplace is IPlatformFee {
     /**
      *  @notice Lets a direct listing creator cancel their listing.
      *
-     *  @param _listingId The unique Id of the lisitng to cancel.
+     *  @param _listingId The unique Id of the listing to cancel.
      */
     function cancelDirectListing(uint256 _listingId) external;
 
     /**
      *  @notice Lets someone buy a given quantity of tokens from a direct listing by paying the fixed price.
      *
-     *  @param _listingIds The list of uids of the direct lisitngs to buy from.
+     *  @param _listingIds The list of uids of the direct listings to buy from.
      *  @param _quantitiesToBuy The list of amount of NFTs to buy from the direct listings with respect to listing ids.
      *  @param _buyFor The receiver of the NFT being bought.
      *  @param _currency The currency to pay the price in.
@@ -282,7 +282,7 @@ interface IMarketplace is IPlatformFee {
      *          (1) buyer does not own or has not approved Marketplace to transfer the appropriate
      *              amount of currency (or hasn't sent the appropriate amount of native tokens)
      *
-     *          (2) the lister does not own or has removed Markeplace's
+     *          (2) the lister does not own or has removed marketplace's
      *              approval to transfer the tokens listed for sale.
      */
     function buy(
@@ -300,7 +300,7 @@ interface IMarketplace is IPlatformFee {
      *       makes two offers to the same direct listing, the last offer is counted as the buyer's
      *       offer to that listing.
      *
-     *  @param _listingId        The unique ID of the lisitng to make an offer/bid to.
+     *  @param _listingId        The unique ID of the listing to make an offer/bid to.
      *
      *  @param _quantityWanted   For auction listings: the 'quantity wanted' is the total amount of NFTs
      *                           being auctioned, regardless of the value of `_quantityWanted` passed.

@@ -102,7 +102,7 @@ contract KarmaPointV3 is
         _pause();
     }
 
-    /// @dev Allows owner to acticvate sale
+    /// @dev Allows owner to activate sale
     function unpause() public onlyOwner whenPaused {
         _unpause();
     }
@@ -116,7 +116,7 @@ contract KarmaPointV3 is
     }
 
     /// @dev Allows user to buy ERC20 karma points against ETH
-    /// @param kpAmount the number of KPs the user wnats to buy
+    /// @param kpAmount the number of KPs the user wants to buy
     function buy(
         uint256 kpAmount
     ) external payable isTevan isNotBlacklisted nonReentrant whenNotPaused {
