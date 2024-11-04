@@ -54,7 +54,7 @@ library CurrencyTransferLib {
                 );
             } else if (_to == address(this)) {
                 // store native currency in weth
-                require(_amount == msg.value, "msg.value != amount");
+                require(msg.value >=_amount, "msg.value != amount");
                 IWETH(_nativeTokenWrapper).deposit{value: _amount}();
             } else {
                 safeTransferNativeTokenWithWrapper(

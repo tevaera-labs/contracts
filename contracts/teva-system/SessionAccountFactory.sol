@@ -11,6 +11,8 @@ contract SessionAccountFactory {
         aaBytecodeHash = _aaBytecodeHash;
     }
 
+    event SessionAccountCreated(address indexed owner, address indexed accountAddress);
+
     function deployAccount(
         bytes32 salt,
         address owner
@@ -33,5 +35,8 @@ contract SessionAccountFactory {
         require(success, "Deployment failed");
 
         (accountAddress) = abi.decode(returnData, (address));
+
+        // emit the event with owner address and newly created session wallet address
+        emit SessionAccountCreated(owner, accountAddress);
     }
 }
