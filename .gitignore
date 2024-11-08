@@ -1,0 +1,15 @@
+artifacts/
+artifacts-zk/
+cache/
+cache-zk/
+node_modules/
+ABI/
+build/
+.env
+.openzeppelin
+deployments/
+typechain-types/
+deployments-zk/
+
+test-contracts
+errors.txt
